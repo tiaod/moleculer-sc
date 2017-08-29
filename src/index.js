@@ -1,11 +1,10 @@
-// import _ from 'lodash'
-// import nanomatch from 'nanomatch'
+const { UnAuthorizedError } = require('./errors')
+const { ServiceNotFoundError } = require("moleculer").Errors
 module.exports = {
   name:'sc-gw',
   settings:{
     worker:null,
     acl:null,
-    // callOptions:{}
   },
   created(){
     if(!this.settings.worker){
@@ -17,20 +16,23 @@ module.exports = {
     })
   },
   methods:{
-    // checkWhitelist(eventName) {
-		// 	return this.settings.whitelist.find(mask => {
-		// 		if (_.isString(mask)) {
-		// 			return nanomatch.isMatch(eventName, mask, { unixify: false });
-		// 		}
-		// 		else if (_.isRegExp(mask)) {
-		// 			return mask.test(eventName);
-		// 		}
-		// 	}) != null;
-		// },
-    checkWhitelist(userId, eventName){
-
+    getUserId(socket){
+      if(socket.authToken && socket.authToken.id){
+        return socket.authToken.id
+      }
     },
-    callAction(eventName, params, socket){
+    async callAction(eventName, params, socket){
+      if(this.settings.acl){
+        let [serviceName, actionName] = eventName.split('.',2)
+        console.log([serviceName, actionName])
+        let userId = this.getUserId(socket)
+        if(!userId){
+          throw new UnAuthorizedError()
+        }
+        if(!await this.settings.acl.isAllowed(userId, serviceName, actionName)){
+          throw new ServiceNotFoundError(eventName)
+        }
+      }
       //create(broker, action, nodeID, params, opts)
       return this.broker.call(eventName, params, {
         meta: {
@@ -50,13 +52,6 @@ module.exports = {
           return
         }
         svc.logger.debug('recevied message:',obj)
-        // if (svc.settings.acl) {
-  			// 	if (!svc.checkWhitelist(obj.event)) {
-  			// 		svc.logger.debug(`  The '${obj.event}' event is not in the whitelist!`);
-        //     return
-  			// 	}
-  			// }
-
         let respond = { //响应的内容
           rid:obj.cid //回调函数的id
         }
@@ -66,10 +61,11 @@ module.exports = {
           svc.logger.error("  Request error!", err.name, ":", err.message, "\n", err.stack, "\nData:", err.data);
           respond.error = {
             type:err.type,
-            message: err.message
+            message: err.message,
+            code: err.code,
+            data: err.data
           }
         }
-
         this.send( this.encode(respond))
       }
     }

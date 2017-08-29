@@ -23,5 +23,8 @@
   "bugs": {
     "url": "https://github.com/tiaod/moleculer-sc/issues"
   },
-  "homepage": "https://github.com/tiaod/moleculer-sc#readme"
+  "homepage": "https://github.com/tiaod/moleculer-sc#readme",
+  "dependencies": {
+    "moleculer": "^0.10.0"
+  }
 }
