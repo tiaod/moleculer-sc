@@ -1,0 +1,27 @@
+{
+  "name": "moleculer-sc",
+  "version": "0.1.0",
+  "description": "API Gateway service for Moleculer framework using SocketCluster",
+  "main": "src/index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tiaod/moleculer-sc.git"
+  },
+  "keywords": [
+    "socketcluster",
+    "moleculer",
+    "microservice"
+  ],
+  "author": "tiaod",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tiaod/moleculer-sc/issues"
+  },
+  "homepage": "https://github.com/tiaod/moleculer-sc#readme"
+}
