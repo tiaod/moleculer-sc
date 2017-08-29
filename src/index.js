@@ -21,6 +21,11 @@ module.exports = {
         return socket.authToken.id
       }
     },
+    getMeta(socket){
+      return {
+        user: socket.authToken
+      }
+    },
     async callAction(eventName, params, socket){
       if(this.settings.acl){
         let [serviceName, actionName] = eventName.split('.',2)
@@ -34,11 +39,7 @@ module.exports = {
         }
       }
       //create(broker, action, nodeID, params, opts)
-      return this.broker.call(eventName, params, {
-        meta: {
-          user: socket.authToken
-        }
-      })
+      return this.broker.call(eventName, params, this.getMeta(socket))
     },
     handler(){
       const svc = this
