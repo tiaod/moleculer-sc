@@ -1,5 +1,6 @@
 const { UnAuthorizedError } = require('./errors')
 const { ServiceNotFoundError } = require("moleculer").Errors
+const debug = require('debug')('moleculer-sc')
 module.exports = {
   name:'sc-gw',
   settings:{
@@ -55,6 +56,7 @@ module.exports = {
         svc.logger.debug('recevied message:',obj)
         if(!obj.event) return
         if(obj.event.startsWith('#') || !svc.broker.hasAction(obj.event)) return
+        debug('callAction:',obj)
         let respond = { //响应的内容
           rid:obj.cid //回调函数的id
         }
