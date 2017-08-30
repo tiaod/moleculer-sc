@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/tiaod/moleculer-sc#readme",
   "dependencies": {
+    "debug": "^3.0.1",
     "moleculer": "^0.10.0"
   }
 }
