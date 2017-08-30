@@ -53,6 +53,8 @@ module.exports = {
           return
         }
         svc.logger.debug('recevied message:',obj)
+        if(!obj.event) return
+        if(obj.event.startsWith('#') || !svc.broker.hasAction(obj.event)) return
         let respond = { //响应的内容
           rid:obj.cid //回调函数的id
         }
