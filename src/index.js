@@ -57,8 +57,8 @@ module.exports = {
         if(!obj.event) return
         if(obj.event.startsWith('#') || !svc.broker.hasAction(obj.event)) return
         debug('callAction:',obj)
-        let respond = { //响应的内容
-          rid:obj.cid //回调函数的id
+        let respond = { // resond
+          rid:obj.cid // callback id
         }
         try{
           respond.data = await svc.callAction(obj.event, obj.data, this)
