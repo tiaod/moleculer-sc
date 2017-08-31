@@ -12,6 +12,8 @@ A API Gateway service for Moleculer framework using SocketCluster
 $ npm install --save moleculer-sc
 ```
 # Usage
+Before you start, you have to create a SocketCluster project, and write the code in `worker.js`.
+
 ## Handle socket events
 Create your own SocketCluster Gateway service.
 ```javascript
@@ -19,10 +21,10 @@ Create your own SocketCluster Gateway service.
 const SocketClusterService = require('moleculer-sc')
 module.exports.run = function (worker) {
   broker.createService({
-    name:'sc-gw', // SocketCluster GateWay
+    name:'sc-gw',
     mixins:[SocketClusterService],
     settings:{
-      worker, // Just pass the worker to settings.
+      worker, // Pass the sc worker to settings.
     }
   })
   broker.start()

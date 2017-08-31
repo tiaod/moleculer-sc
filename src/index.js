@@ -64,12 +64,7 @@ module.exports = {
           respond.data = await svc.callAction(obj.event, obj.data, this)
         }catch(err){
           svc.logger.error("  Request error!", err.name, ":", err.message, "\n", err.stack, "\nData:", err.data);
-          respond.error = {
-            type:err.type,
-            message: err.message,
-            code: err.code,
-            data: err.data
-          }
+          respond.error = err
         }
         this.send( this.encode(respond))
       }
