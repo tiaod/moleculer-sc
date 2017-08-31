@@ -7,6 +7,7 @@
     "example": "examples"
   },
   "scripts": {
+    "build": "babel src -d lib",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -25,6 +26,8 @@
   },
   "homepage": "https://github.com/tiaod/moleculer-sc#readme",
   "dependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-preset-env": "^1.6.0",
     "debug": "^3.0.1",
     "moleculer": "^0.10.0"
   }
