@@ -5,7 +5,7 @@ var path = require('path');
 var morgan = require('morgan');
 var healthChecker = require('sc-framework-health-check');
 const { ServiceBroker } = require("moleculer");
-const SocketClusterService = require('../../src')
+const SocketClusterService = require('../../lib')
 
 let acl = require('acl')
 
