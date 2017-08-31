@@ -20,6 +20,9 @@ Create your own SocketCluster Gateway service.
 // SocketCluster worker.js
 const SocketClusterService = require('moleculer-sc')
 module.exports.run = function (worker) {
+  let broker = new ServiceBroker({
+    logger: console
+  })
   broker.createService({
     name:'sc-gw',
     mixins:[SocketClusterService],
@@ -84,6 +87,9 @@ acl = new acl(new acl.memoryBackend())
 acl.allow('admin', 'math', 'add') // allow admin to call math.add
 acl.addUserRoles('user id here', 'admin')
 module.exports.run = function (worker) {
+  let broker = new ServiceBroker({
+    logger: console
+  })
   broker.createService({
     name:'sc-gw', // SocketCluster GateWay
     mixins:[SocketClusterService],
