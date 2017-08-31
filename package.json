@@ -2,11 +2,12 @@
   "name": "moleculer-sc",
   "version": "0.2.2",
   "description": "API Gateway service for Moleculer framework using SocketCluster",
-  "main": "src/index.js",
+  "main": "lib/index.js",
   "directories": {
     "example": "examples"
   },
   "scripts": {
+    "dev": "node examples/simple/server.js",
     "build": "babel src -d lib",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
