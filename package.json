@@ -1,6 +1,6 @@
 {
   "name": "moleculer-sc",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "API Gateway service for Moleculer framework using SocketCluster",
   "main": "lib/index.js",
   "directories": {
