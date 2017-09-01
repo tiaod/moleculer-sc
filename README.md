@@ -5,19 +5,22 @@ A API Gateway service for Moleculer framework using SocketCluster
 # Features
 - Proxy SocketCluster events to moleculer.
 - Support SocketCluster authorization (`socket.authToken` => moleculer `ctx.meta.user`)
-- Access control lists (Using [node_acl](https://github.com/OptimalBits/node_acl))
+- whitelist
 
 # Install
 ```
 $ npm install --save moleculer-sc
 ```
 # Usage
+SocketCluster is a fast, highly scalable HTTP + WebSockets server environment which lets you build multi-process real-time systems that make use of all CPU cores on a machine/instance.
+
 Before you start, you have to create a SocketCluster project, and write the code in `worker.js`.
 
 ## Handle socket events
 Create your own SocketCluster Gateway service.
 ```javascript
 // SocketCluster worker.js
+const { ServiceBroker } = require('moleculer')
 const SocketClusterService = require('moleculer-sc')
 module.exports.run = function (worker) {
   let broker = new ServiceBroker({
@@ -69,7 +72,7 @@ socket.on('login', function (credentials, respond) {
   })
 })
 ```
-Also you can overwrite the `getMeta` method to add more addition meta info. The default `getMeta` method is:
+Also you could overwrite the `getMeta` method to add more addition meta info. The default `getMeta` method is:
 ```javascript
 getMeta(socket){
   return {
@@ -77,53 +80,52 @@ getMeta(socket){
   }
 }
 ```
+Example to add more additional info:
+```javascript
+```
 
-
-## Access control lists
+## Whitelist
+If you don’t want to public all actions, you can filter them with whitelist option.
+You can use match strings or regexp in list.
 You can also pass a `node_acl` instance to settings:
 ``` javascript
-let acl = require('acl')
-acl = new acl(new acl.memoryBackend())
-acl.allow('admin', 'math', 'add') // allow admin to call math.add
-acl.addUserRoles('user id here', 'admin')
-module.exports.run = function (worker) {
-  let broker = new ServiceBroker({
-    logger: console
-  })
-  broker.createService({
-    name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
-    settings:{
-      acl, //Optional
-      worker,
-    }
-  })
-  broker.start()
-}
-```
-By default, `moleculer-sc` will get the userId from `socket.authToken.id` for `node_acl`. The default `getUserId` method is:
-```javascript
-getUserId(socket){
-  if(socket.authToken && socket.authToken.id){
-    return socket.authToken.id
-  }
-}
-```
-You can overwrite the `getUserId` method to get userId from other field:
-```javascript
 broker.createService({
   name:'sc-gw', // SocketCluster GateWay
   mixins:[SocketClusterService],
   settings:{
-    acl, //Optional
+    whitelist: [
+      // Access to any actions in 'posts' service
+      "posts.*",
+      // Access to call only the `users.list` action
+      "users.list",
+      // Access to any actions in 'math' service
+      /^math\.\w+$/
+    ]
     worker,
-  },
-  methods:{
-    getUserId(socket){ //scSocket
-      return socket.authToken.username
-    }
   }
 })
+```
+
+## Access control lists
+If you want to do a role-based access control, you can do it on SocketCluster way. Here is an example using `node_acl`:
+```javascript
+let acl = require('acl')
+acl = new acl(new acl.memoryBackend())
+acl.allow('admin', 'math', 'add') // allow admin to call
+acl.addUserRoles('user id here', 'admin')
+scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
+  async function (req, next) {
+    let [service, action] = req.event.split('.', 2)
+    if (!await this.settings.acl.isAllowed(req.socket.authToken.id, service, action)) {
+      next(); // Allow
+    } else {
+      var err = MyCustomEmitFailedError(req.socket.id + ' is not allowed to emit event ' + req.event);
+      next(err); // Block
+      // next(true); // Passing true to next() blocks quietly (without raising a warning on the server-side)
+    }
+  }
+);
+
 ```
 
 ## Publish to scChannel

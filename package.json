@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node examples/simple/server.js",
     "build": "babel src -d lib",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "ava"
   },
   "repository": {
     "type": "git",
@@ -27,9 +27,13 @@
   },
   "homepage": "https://github.com/tiaod/moleculer-sc#readme",
   "dependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-preset-env": "^1.6.0",
     "debug": "^3.0.1",
-    "moleculer": "^0.10.0"
+    "moleculer": "^0.10.0",
+    "nanomatch": "^1.2.0"
+  },
+  "devDependencies": {
+    "ava": "^0.22.0",
+    "babel-cli": "^6.26.0",
+    "babel-preset-env": "^1.6.0"
   }
 }
