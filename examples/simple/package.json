@@ -9,7 +9,6 @@
     }
   ],
   "dependencies": {
-    "acl": "^0.4.10",
     "connect": "3.0.1",
     "express": "4.14.0",
     "minimist": "1.1.0",

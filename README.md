@@ -7,7 +7,7 @@ A API Gateway service for Moleculer framework using SocketCluster
 # Features
 - Proxy SocketCluster events to moleculer.
 - Support SocketCluster authorization (`socket.authToken` => moleculer `ctx.meta.user`)
-- whitelist
+- Whitelist
 
 # Install
 ```

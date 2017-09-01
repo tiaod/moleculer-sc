@@ -7,11 +7,9 @@ var healthChecker = require('sc-framework-health-check');
 const { ServiceBroker } = require("moleculer");
 const SocketClusterService = require('../../lib')
 
-let acl = require('acl')
 
 module.exports.run = function (worker) {
   console.log('   >> Worker PID:', process.pid);
-  acl = new acl(new acl.memoryBackend())
   let broker = new ServiceBroker({
     logger: console
   });
@@ -19,7 +17,6 @@ module.exports.run = function (worker) {
     name:'sc-gw', // SocketCluster GateWay
     mixins:[SocketClusterService],
     settings:{
-      acl,
       worker,
     }
   })
