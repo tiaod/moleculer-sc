@@ -1,4 +1,6 @@
-![](https://camo.githubusercontent.com/22a347b6cc07f98ce0ee06be66385a4cb967d4a7/687474703a2f2f6d6f6c6563756c65722e73657276696365732f696d616765732f62616e6e65722e706e67)
+![LOGO](https://camo.githubusercontent.com/22a347b6cc07f98ce0ee06be66385a4cb967d4a7/687474703a2f2f6d6f6c6563756c65722e73657276696365732f696d616765732f62616e6e65722e706e67)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/tiaod/moleculer-sc/master/LICENSE)
+[![npm](https://img.shields.io/npm/v/npm.svg)](https://www.npmjs.com/package/moleculer-sc)
 # moleculer-sc
 A API Gateway service for Moleculer framework using SocketCluster
 
