@@ -64,12 +64,15 @@ module.exports = {
       }
     }),
     async updateHandlers(){
+      debug('updating handlers')
       let actions = await this.getPublicActions()
       let removedActions = _.keys(this.handlers).filter(item=>!actions.includes(item))
+      debug('removedActions', removedActions)
       for(let removed of removedActions){ //remove old actions
         debug('remove handler:', removed)
-        delete this.handlers[removedActions]
+        delete this.handlers[removed]
       }
+      debug('all actions:', actions)
       for(let action of actions){ //attach new actions
         debug('add handler:', action)
         this.handlers[action] = this.makeHandler(action)
@@ -83,6 +86,7 @@ module.exports = {
   },
   events:{
     'services.changed':function(payload, sender){
+      debug('service changed!')
       this.updateHandlers()
     }
   }
