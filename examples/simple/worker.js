@@ -24,7 +24,7 @@ module.exports.run = function (worker) {
     name:'math',
     actions: {
       add(ctx) {
-          return Number(ctx.params.a) + Number(ctx.params.b);
+        return Number(ctx.params.a) + Number(ctx.params.b);
       }
     }
   })

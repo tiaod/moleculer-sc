@@ -2,7 +2,7 @@
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/tiaod/moleculer-sc/master/LICENSE)
 [![npm](https://img.shields.io/npm/v/moleculer-sc.svg)](https://www.npmjs.com/package/moleculer-sc)
 # moleculer-sc
-A API Gateway service for Moleculer framework using SocketCluster
+An API Gateway service for Moleculer framework using SocketCluster
 
 # Features
 - Proxy SocketCluster events to moleculer.
@@ -45,8 +45,9 @@ Example events:
 - List all actions: `socket.emit('$node.list', null, callback)`
 
 ## Authorization
-You can implement authorization. For this you have to do 1 things.
+You can implement authorization. For this you need to do 2 things.
 1. Define the authorization handler in SocketCluster.
+2. Rewrite the `getMeta` method of `sc-gw` service.
 
 Example authorization:
 ```javascript
@@ -84,12 +85,26 @@ getMeta(socket){
 ```
 Example to add more additional info:
 ```javascript
+broker.createService({
+  name:'sc-gw',
+  mixins:[SocketClusterService],
+  settings:{
+    worker, // Pass the sc worker to settings.
+  },
+  methods:{
+    getMeta(socket){ //construct the meta object.
+      return {
+        user: socket.authToken,
+        socketId: socket.id
+      }
+    }
+  }
+})
 ```
 
 ## Whitelist
 If you don’t want to public all actions, you can filter them with whitelist option.
 You can use match strings or regexp in list.
-You can also pass a `node_acl` instance to settings:
 ``` javascript
 broker.createService({
   name:'sc-gw', // SocketCluster GateWay
@@ -132,3 +147,7 @@ scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
 
 ## Publish to scChannel
 todo
+
+
+# Change logs
+**0.3.0** - Doesn't integrate `node_acl` anymore. If you need access control lists, you can do it on socketcluster side.

@@ -16,6 +16,7 @@ module.exports = {
   async started(){
     const scServer = this.settings.worker.scServer
     scServer.on('connection', (socket) => {
+      debug('socket connected:', socket)
       for(let action in this.handlers){
         socket.on(action, this.handlers[action]) //attach to socket
       }
