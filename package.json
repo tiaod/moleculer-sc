@@ -1,6 +1,6 @@
 {
   "name": "moleculer-sc",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "API Gateway service for Moleculer framework using SocketCluster",
   "main": "lib/index.js",
   "directories": {
@@ -28,6 +28,7 @@
   "homepage": "https://github.com/tiaod/moleculer-sc#readme",
   "dependencies": {
     "debug": "^3.0.1",
+    "fastest-validator": "^0.5.0",
     "moleculer": "^0.10.0",
     "nanomatch": "^1.2.0"
   },

@@ -14,4 +14,10 @@ class UnAuthorizedError extends MoleculerError {
 	}
 }
 
-module.exports = {UnAuthorizedError}
+class BadRequestError extends MoleculerError {
+	constructor(type, data){
+		super('Bad Request', 400, type || "ERR_INVALID_FORMAT", data)
+	}
+}
+
+module.exports = {UnAuthorizedError, BadRequestError}

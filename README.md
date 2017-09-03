@@ -5,7 +5,7 @@
 An API Gateway service for Moleculer framework using SocketCluster
 
 # Features
-- Proxy SocketCluster events to moleculer.
+- Call moleculer actions by emit SocketCluster events.
 - Support SocketCluster authorization (`socket.authToken` => moleculer `ctx.meta.user`)
 - Whitelist
 
@@ -38,16 +38,85 @@ module.exports.run = function (worker) {
   broker.start()
 }
 ```
-Example events:
-- Call `test.hello` action: `socket.emit('test.hello',null, callback)`
-- Call `math.add` action with params: `socket.emit('test.hello',{a:25, b:13}, callback)`
-- Get health info of node: `socket.emit('$node.health',null, callback)`
-- List all actions: `socket.emit('$node.list', null, callback)`
+By default, `moleculer-sc` will handle the `call` event which proxy to moleculer's `broker.call`
+Examples:
+- Call `test.hello` action: `socket.emit('call',{action:'test.hello'}, callback)`
+- Call `math.add` action with params: `socket.emit('call',{action:'math.add', params:{a:25, b:13}}, callback)`
+- Get health info of node: `socket.emit('call',{ action: '$node.health' }, callback)`
+- List all actions: `socket.emit('call', { action: '$node.list'}, callback)`
+
+## Whitelist
+If you don’t want to public all actions, you can filter them with whitelist option.
+You can use match strings or regexp in list.
+``` javascript
+broker.createService({
+  name:'sc-gw', // SocketCluster GateWay
+  mixins:[SocketClusterService],
+  settings: {
+    worker,
+    routes: [{
+      event: "call",
+      whitelist: [
+        // Access to any actions in 'posts' service
+        "posts.*",
+        // Access to call only the `users.list` action
+        "users.list",
+        // Access to any actions in 'math' service
+        /^math\.\w+$/
+      ]
+    }]
+    }
+})
+```
+## Calling options
+
+The route has a callOptions property which is passed to broker.call. So you can set timeout, retryCount or fallbackResponse options for routes.
+
+**Note**: If you provie a meta field here, it replace the `getMeta` method's result.
+```javascript
+broker.createService({
+    mixins: [SocketClusterService],
+    settings: {
+        routes: [{
+            callOptions: {
+                timeout: 500,
+                retryCount: 0,
+                fallbackResponse(ctx, err) { ... }
+            }
+        }]		
+    }
+});
+```
+## Multiple routes
+You can create multiple routes with different prefix, whitelist, alias, calling options & authorization.
+```javascript
+broker.createService({
+  mixins: [SocketClusterService],
+  settings: {
+    routes: [
+      {
+        event: "adminCall",
+        whitelist: [
+          "$node.*",
+          "users.*",
+        ]
+      },
+      {
+        event: "call",
+        whitelist: [
+          "posts.*",
+          "math.*",
+        ]
+      }
+    ]
+  }
+});
+```
 
 ## Authorization
 You can implement authorization. For this you need to do 2 things.
 1. Define the authorization handler in SocketCluster.
-2. Rewrite the `getMeta` method of `sc-gw` service.
+2. Rewrite the `getMeta` method of `sc-gw` service. (Optional)
 
 Example authorization:
 ```javascript
@@ -102,27 +171,6 @@ broker.createService({
 })
 ```
 
-## Whitelist
-If you don’t want to public all actions, you can filter them with whitelist option.
-You can use match strings or regexp in list.
-``` javascript
-broker.createService({
-  name:'sc-gw', // SocketCluster GateWay
-  mixins:[SocketClusterService],
-  settings:{
-    whitelist: [
-      // Access to any actions in 'posts' service
-      "posts.*",
-      // Access to call only the `users.list` action
-      "users.list",
-      // Access to any actions in 'math' service
-      /^math\.\w+$/
-    ]
-    worker,
-  }
-})
-```
-
 ## Access control lists
 If you want to do a role-based access control, you can do it on SocketCluster way. Here is an example using `node_acl`:
 ```javascript
@@ -132,11 +180,12 @@ acl.allow('admin', 'math', 'add') // allow admin to call
 acl.addUserRoles('user id here', 'admin')
 scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
   async function (req, next) {
-    let [service, action] = req.event.split('.', 2)
-    if (!await this.settings.acl.isAllowed(req.socket.authToken.id, service, action)) {
+    if(!data || typeof data.action !== 'string') next(new Error('invaild request'))
+    let [service, action] = req.data.action.split('.', 2)
+    if (!await acl.isAllowed(req.socket.authToken.id, service, action)) {
       next(); // Allow
     } else {
-      var err = MyCustomEmitFailedError(req.socket.id + ' is not allowed to emit event ' + req.event);
+      var err = MyCustomEmitFailedError(req.socket.id + ' is not allowed to call action ' + req.event);
       next(err); // Block
       // next(true); // Passing true to next() blocks quietly (without raising a warning on the server-side)
     }
@@ -150,4 +199,6 @@ todo
 
 
 # Change logs
+**0.4.0** - Add multiple routes support.
+
 **0.3.0** - Doesn't integrate `node_acl` anymore. If you need access control lists, you can do it on socketcluster side.
