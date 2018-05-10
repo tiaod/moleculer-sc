@@ -298,6 +298,8 @@ broker.sc = socket || exchange //pass the socket or exchange object to broker, T
 ```
 
 # Change logs
+**0.6.1** - You can pass `socket` or `exchange` object to SCTransporter now.
+
 **0.6.0** - Breaking change:
 Don't pass worker in settings anymore, you should pass the worker when initerlized the service.
 ```javascript
