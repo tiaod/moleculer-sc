@@ -1,3 +1,9 @@
+/*
+ * moleculer-sc
+ * Copyright (c) 2018 tiaod (https://github.com/tiaod/moleculer-sc)
+ * MIT Licensed
+ */
+
 const _ = require('lodash')
 const debug = require('debug')('moleculer-sc')
 const nanomatch = require('nanomatch')
@@ -16,19 +22,19 @@ module.exports = {
     if(!this.settings.worker){
       throw new Error('SocketCluster worker not set. You must set the worker.')
     }
+    this.routes = {} //handlers
+    for(let item of this.settings.routes){ //attach new actions
+      this.logger.info('Add handler:', item)
+      this.routes[item.event] = this.makeHandler(item.event, item.whitelist, item.callOptions)
+    }
     const scServer = this.settings.worker.scServer
     scServer.on('connection', (socket) => {
-      debug('socket connected:', socket)
+      this.logger.info('Socket connected:', socket)
       for(let action in this.routes){
-        debug('attach event:', action)
+        // this.logger.info('Attach event:', action)
         socket.on(action, this.routes[action]) //attach to socket
       }
     })
-    this.routes = {}
-    for(let item of this.settings.routes){ //attach new actions
-      debug('add handler:', item)
-      this.routes[item.event] = this.makeHandler(item.event, item.whitelist, item.callOptions)
-    }
   },
   methods:{
     checkWhitelist(action, whitelist) {
@@ -42,7 +48,7 @@ module.exports = {
 			}) != null
 		},
     makeHandler:function(eventName, whitelist, opts){
-      debug('makeHandler', eventName)
+      debug('MakeHandler', eventName)
       const svc = this
       return async function(data, respond){
         debug(`handle ${eventName} event`,data, whitelist)

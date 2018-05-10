@@ -4,6 +4,9 @@
 # moleculer-sc
 An API Gateway service for Moleculer framework using SocketCluster
 
+[SocketCluster](https://socketcluster.io/) is an open source real-time framework for Node.js. It supports both direct client-server communication and group communication via pub/sub channels. It is designed to easily scale to any number of processes/hosts and is ideal for building chat systems.
+
+
 # Features
 - Call moleculer actions by emit SocketCluster events.
 - Support SocketCluster authorization (`socket.authToken` => moleculer `ctx.meta.user`)
@@ -195,10 +198,14 @@ scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
 ```
 
 ## Publish to scChannel
-todo
+Just do it on SocketCluster way!
+
+
 
 
 # Change logs
+**0.5.0** - Add transporter.
+
 **0.4.0** - Add multiple routes support.
 
 **0.3.0** - Doesn't integrate `node_acl` anymore. If you need access control lists, you can do it on socketcluster side.

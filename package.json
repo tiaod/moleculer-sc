@@ -1,14 +1,15 @@
 {
   "name": "moleculer-sc",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "API Gateway service for Moleculer framework using SocketCluster",
   "main": "lib/index.js",
   "directories": {
     "example": "examples"
   },
   "scripts": {
-    "dev": "node examples/simple/server.js",
-    "build": "babel src -d lib",
+    "dev": "babel src -d lib --watch",
+    "example": "node examples/simple/server.js",
+    "build": "",
     "test": "ava"
   },
   "repository": {
@@ -27,10 +28,12 @@
   },
   "homepage": "https://github.com/tiaod/moleculer-sc#readme",
   "dependencies": {
-    "debug": "^3.0.1",
+    "debug": "^3.1.0",
     "fastest-validator": "^0.5.0",
+    "lodash": "^4.17.10",
     "moleculer": "^0.10.0",
-    "nanomatch": "^1.2.0"
+    "nanomatch": "^1.2.0",
+    "socketcluster-client": "^13.0.0"
   },
   "devDependencies": {
     "ava": "^0.22.0",

@@ -1,3 +1,10 @@
+/*
+ * moleculer-sc
+ * Copyright (c) 2018 tiaod (https://github.com/tiaod/moleculer-sc)
+ * MIT Licensed
+ */
+
+
 const { MoleculerError } = require("moleculer").Errors;
 const ERR_INVALID_TOKEN = "ERR_INVALID_TOKEN";
 class UnAuthorizedError extends MoleculerError {
