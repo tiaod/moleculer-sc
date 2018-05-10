@@ -15,8 +15,7 @@ class Worker extends SCWorker {
       nodeID: "node-1",
       logger: console,
       transporter: new SCTransporter({
-        hostname:'localhost',
-        port:8000
+        exchange:this.exchange
       })
     })
     broker.createService({
@@ -26,6 +25,10 @@ class Worker extends SCWorker {
           return Number(ctx.params.a) + Number(ctx.params.b);
         }
       }
+    })
+    broker.createService({
+      name:'sc-gw',
+      mixins: [SCService(this)]
     })
     broker.start().then(()=>{
       console.log('broker1 started!')
@@ -68,15 +71,15 @@ class Worker extends SCWorker {
         scServer.exchange.publish('sample', count);
       });
 
-      var interval = setInterval(function () {
-        socket.emit('random', {
-          number: Math.floor(Math.random() * 5)
-        });
-      }, 1000);
+      // var interval = setInterval(function () {
+      //   socket.emit('random', {
+      //     number: Math.floor(Math.random() * 5)
+      //   });
+      // }, 1000);
 
-      socket.on('disconnect', function () {
-        clearInterval(interval);
-      });
+      // socket.on('disconnect', function () {
+      //   clearInterval(interval);
+      // });
     });
   }
 }

@@ -273,9 +273,29 @@ broker2.start()
 ```
 **Warning:** You should add a SocketCluster middleware to apply access control with `MOL.` channel prefix.
 
+
+You can also pass an socket object or SCExchange instance:
+
+``` javascript
+new SCTransporter({
+  socket:socket
+})
+// or
+new SCTransporter({
+  exchange:exchange
+})
+```
+
+
 ## Publish to scChannel
 Just do it on SocketCluster way!
-
+```javascript
+let broker = new ServiceBroker({
+  nodeID: "node-1",
+  logger: console,
+})
+broker.sc = socket || exchange //pass the socket or exchange object to broker, Then you can use `ctx.broker.sc.publish(channel,data)`
+```
 
 # Change logs
 **0.6.0** - Breaking change:

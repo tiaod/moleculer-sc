@@ -10,8 +10,11 @@ import socketCluster from 'socketcluster-client'
 class SocketClusterTranspoter extends Transporter {
   constructor(opts){
     super(opts)
+    if(opts.socket) this.socket = opts.socket
+    if(opts.exchange) this.socket = opts.exchange
   }
   connect(){
+    if(this.socket) return this.onConnected()
     return new Promise((resolve, reject)=>{
       const socket = socketCluster.create(this.opts)
       this.socket = socket
@@ -38,7 +41,7 @@ class SocketClusterTranspoter extends Transporter {
   }
   subscribe(cmd, nodeID){
     const t = this.getTopicName(cmd, nodeID);
-    const channel = this.socket.subscribe(t)
+    const channel = (this.socket || this.exchange).subscribe(t)
     channel.watch(msg=>this.incomingMessage(cmd, msg))
     this.logger.info(`Subscribe to channel: ${t}`)
   }

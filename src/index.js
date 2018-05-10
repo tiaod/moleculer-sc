@@ -30,7 +30,7 @@ module.exports = function(worker){
       }
       const scServer = worker.scServer
       scServer.on('connection', (socket) => {
-        this.logger.info('Socket connected:', socket)
+        this.logger.info('Socket connected:', socket.id)
         for(let action in this.routes){
           // this.logger.info('Attach event:', action)
           socket.on(action, this.routes[action]) //attach to socket
@@ -53,10 +53,10 @@ module.exports = function(worker){
         const svc = this
         return async function(data, respond){
           debug(`handle ${eventName} event`,data, whitelist)
-          if(!data || !_.isString(data.action))
+          if(!data || !_.isString(data.action)) // validate action
             return respond(new BadRequestError())
           let {action, params} = data
-          if(whitelist && !svc.checkWhitelist(action, whitelist))
+          if(whitelist && !svc.checkWhitelist(action, whitelist)) //check whitelist
             return respond(new ServiceNotFoundError(action))
           try{
             debug('callAction:', action, params, svc.getMeta(this))
