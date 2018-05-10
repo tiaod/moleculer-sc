@@ -4,11 +4,13 @@
  * MIT Licensed
  */
 
-import Transporters from 'moleculer/src/transporters'
+import Transporter from 'moleculer/src/transporters/base'
 import socketCluster from 'socketcluster-client'
 
-
-class SocketClusterTranspoter extends Transporters.Base {
+class SocketClusterTranspoter extends Transporter {
+  constructor(opts){
+    super(opts)
+  }
   connect(){
     return new Promise((resolve, reject)=>{
       const socket = socketCluster.create(this.opts)
