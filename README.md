@@ -284,7 +284,7 @@ Don't pass worker in settings anymore, you should pass the worker when initerliz
 // old:
 broker.createService({
   name:'sc-gw', // SocketCluster GateWay
-  mixins:[SCService],
+  mixins:[SCService], //This will not work anymore
   settings:{
     worker,
   }
