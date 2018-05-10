@@ -57,7 +57,7 @@ You can use match strings or regexp in list.
 ``` javascript
 broker.createService({
   name:'sc-gw', // SocketCluster GateWay
-  mixins:[SocketClusterService],
+  mixins:[SocketClusterService(worker)],
   settings: {
     worker,
     routes: [{
@@ -79,7 +79,7 @@ broker.createService({
 You can create multiple routes with different prefix, whitelist, alias, calling options & authorization.
 ```javascript
 broker.createService({
-  mixins: [SocketClusterService],
+  mixins: [SocketClusterService(worker)],
   settings: {
     routes: [
       {
@@ -144,7 +144,7 @@ Example to add more additional info:
 ```javascript
 broker.createService({
   name:'sc-gw',
-  mixins:[SocketClusterService],
+  mixins:[SocketClusterService(worker)],
   settings:{
     worker, // Pass the sc worker to settings.
   },
@@ -165,7 +165,7 @@ The route has a callOptions property which is passed to broker.call. So you can 
 
 ```javascript
 broker.createService({
-  mixins: [SocketClusterService],
+  mixins: [SocketClusterService(worker)],
   settings: {
     routes: [{
       event:'call',
@@ -185,7 +185,7 @@ broker.createService({
 **Note**: If you provie a meta field here, it replace the `getMeta` method's result.
 ```javascript
 broker.createService({
-  mixins: [SocketClusterService],
+  mixins: [SocketClusterService(worker)],
   settings: {
     routes: [{
       event:'call',
