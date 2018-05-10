@@ -42,7 +42,7 @@ class SocketClusterTranspoter extends Transporter {
     channel.watch(msg=>this.incomingMessage(cmd, msg))
     this.logger.info(`Subscribe to channel: ${t}`)
   }
-  publish(pakcet){
+  publish(packet){
     if(!this.socket) return Promise.resolve();
     return new Promise((resolve, reject)=>{
       let topic = this.getTopicName(packet.type, packet.target);

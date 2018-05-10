@@ -27,10 +27,7 @@ test('methods: checkWhitelist',async t=>{
   const {broker, worker} = t.context
   const svc = broker.createService({
     name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
-    settings:{
-      worker,
-    }
+    mixins:[SocketClusterService(worker)],
   })
   const whitelist = [
     'math.add',
@@ -50,10 +47,9 @@ test('should attach handler to socket', async t=>{
   worker.scServer = new EventEmitter()
   const svc = broker.createService({
     name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
+    mixins:[SocketClusterService(worker)],
     settings:{
       routes:[{event:'foo'}],
-      worker,
     }
   })
   broker.start()
@@ -71,9 +67,8 @@ test('should only allow methods in whitelist', async t=>{
   const {broker, worker} = t.context
   broker.createService({
     name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
+    mixins:[SocketClusterService(worker)],
     settings: {
-      worker,
       routes: [{
         event: "call",
         whitelist: [
@@ -118,10 +113,9 @@ test('emit invaild data should return BadRequestError', async t=>{
   broker.start()
   const svc = broker.createService({
     name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
+    mixins:[SocketClusterService(worker)],
     settings:{
-      routes:[{event:'call'}],
-      worker,
+      routes:[{event:'call'}]
     }
   })
   // await sleep(100)

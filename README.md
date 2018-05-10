@@ -4,41 +4,44 @@
 # moleculer-sc
 An API Gateway service for Moleculer framework using SocketCluster
 
+**What is SocketCluster?**
 [SocketCluster](https://socketcluster.io/) is an open source real-time framework for Node.js. It supports both direct client-server communication and group communication via pub/sub channels. It is designed to easily scale to any number of processes/hosts and is ideal for building chat systems.
 
 
 # Features
-- Call moleculer actions by emit SocketCluster events.
-- Support SocketCluster authorization (`socket.authToken` => moleculer `ctx.meta.user`)
-- Whitelist
+- Call moleculer actions by emiting SocketCluster events.
+- Support SocketCluster authorization (sc `socket.authToken` => moleculer `ctx.meta.user`)
+- Whitelist.
 
 # Install
-```
-$ npm install --save moleculer-sc
+```shell
+$ npm install moleculer-sc
 ```
 # Usage
 SocketCluster is a fast, highly scalable HTTP + WebSockets server environment which lets you build multi-process real-time systems that make use of all CPU cores on a machine/instance.
 
-Before you start, you have to create a SocketCluster project, and write the code in `worker.js`.
+Before you start, you have to create a SocketCluster project, and write the code in `worker.js`. (See `/examples/simple`)
 
 ## Handle socket events
 Create your own SocketCluster Gateway service.
 ```javascript
 // SocketCluster worker.js
+const SCWorker = require('socketcluster/scworker');
 const { ServiceBroker } = require('moleculer')
 const SocketClusterService = require('moleculer-sc')
-module.exports.run = function (worker) {
-  let broker = new ServiceBroker({
-    logger: console
-  })
-  broker.createService({
-    name:'sc-gw',
-    mixins:[SocketClusterService],
-    settings:{
-      worker, // Pass the sc worker to settings.
-    }
-  })
-  broker.start()
+class Worker extends SCWorker {
+  run() {
+    console.log('   >> Worker PID:', process.pid);
+    var environment = this.options.environment;
+    let broker = new ServiceBroker({
+      logger: console
+    })
+    broker.createService({
+      name:'sc-gw',
+      mixins:[SCService(this)], //create SCService with worker.
+    })
+    broker.start()
+  }
 }
 ```
 By default, `moleculer-sc` will handle the `call` event which proxy to moleculer's `broker.call`
@@ -71,25 +74,7 @@ broker.createService({
     }
 })
 ```
-## Calling options
 
-The route has a callOptions property which is passed to broker.call. So you can set timeout, retryCount or fallbackResponse options for routes.
-
-**Note**: If you provie a meta field here, it replace the `getMeta` method's result.
-```javascript
-broker.createService({
-    mixins: [SocketClusterService],
-    settings: {
-        routes: [{
-            callOptions: {
-                timeout: 500,
-                retryCount: 0,
-                fallbackResponse(ctx, err) { ... }
-            }
-        }]		
-    }
-});
-```
 ## Multiple routes
 You can create multiple routes with different prefix, whitelist, alias, calling options & authorization.
 ```javascript
@@ -174,6 +159,51 @@ broker.createService({
 })
 ```
 
+## Calling options
+
+The route has a callOptions property which is passed to broker.call. So you can set timeout, retryCount or fallbackResponse options for routes.
+
+```javascript
+broker.createService({
+  mixins: [SocketClusterService],
+  settings: {
+    routes: [{
+      event:'call',
+      whitelist: [
+        "posts.*",
+        "math.*",
+      ],
+      callOptions: {
+        timeout: 500,
+        retryCount: 0,
+        fallbackResponse(ctx, err) { ... }
+      }
+    }]		
+  }
+});
+```
+**Note**: If you provie a meta field here, it replace the `getMeta` method's result.
+```javascript
+broker.createService({
+  mixins: [SocketClusterService],
+  settings: {
+    routes: [{
+      event:'call',
+      callOptions: {
+        meta: { abc:123 }
+      }
+    }]		
+  },
+  methods:{
+    getMeta(socket){
+      return {
+        user: socket.authToken
+      } //This will be replaced by callOptions.meta
+    }
+  }
+});
+```
+
 ## Access control lists
 If you want to do a role-based access control, you can do it on SocketCluster way. Here is an example using `node_acl`:
 ```javascript
@@ -197,13 +227,78 @@ scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
 
 ```
 
+
+
+## SocketCluster transporter
+You can alse use SocketCluster as moleculer's transporter! Which is also very simple:
+```javascript
+// worker.js
+const { ServiceBroker } = require('moleculer')
+const SCTransporter = require('moleculer-sc/transporter')
+let broker = new ServiceBroker({
+  nodeID: "node-1",
+  logger: console,
+  transporter: new SCTransporter({
+    hostname:'localhost',
+    port:8000
+  })
+})
+broker.createService({
+  name:'math',
+  actions: {
+    add(ctx) {
+      return Number(ctx.params.a) + Number(ctx.params.b);
+    }
+  }
+})
+broker.start().then(()=>{
+  console.log('broker1 started!')
+})
+```
+```javascript
+// external-service.js
+const { ServiceBroker } = require('moleculer')
+const SCTransporter = require('moleculer-sc/transporter')
+let broker2 = new ServiceBroker({
+  nodeID: "node-2",
+  logger: console,
+  transporter: new SCTransporter({
+    hostname:'localhost',
+    port:8000
+  })
+})
+broker2.start()
+  .then(() => broker2.call("math.add", { a: 5, b: 3 }))
+  .then(res => console.log("5 + 3 =", res))
+```
+**Warning:** You should add a SocketCluster middleware to apply access control with `MOL.` channel prefix.
+
 ## Publish to scChannel
 Just do it on SocketCluster way!
 
 
-
-
 # Change logs
+**0.6.0** - Breaking change:
+Don't pass worker in settings anymore, you should pass the worker when initerlized the service.
+```javascript
+// old:
+broker.createService({
+  name:'sc-gw', // SocketCluster GateWay
+  mixins:[SCService],
+  settings:{
+    worker,
+  }
+})
+```
+```javascript
+// new:
+broker.createService({
+  name:'sc-gw',
+  mixins:[SCService(worker)], //create SCService with worker.
+})
+```
+This is because the settings is also obtainable on remote nodes, it is transferred during service discovering, which will cause a `TypeError: Converting circular structure to JSON` when serializing it.
+
 **0.5.0** - Add transporter.
 
 **0.4.0** - Add multiple routes support.

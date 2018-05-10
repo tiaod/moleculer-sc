@@ -15,10 +15,7 @@ module.exports.run = function (worker) {
   });
   broker.createService({
     name:'sc-gw', // SocketCluster GateWay
-    mixins:[SocketClusterService],
-    settings:{
-      worker,
-    }
+    mixins:[SocketClusterService(worker)]
   })
   broker.createService({
     name:'math',
