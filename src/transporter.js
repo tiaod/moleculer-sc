@@ -6,22 +6,33 @@
 
 import Transporter from 'moleculer/src/transporters/base'
 import socketCluster from 'socketcluster-client'
+import Debug from 'debug'
+const debug = Debug('moleculer-sc:transporter')
 
 class SocketClusterTranspoter extends Transporter {
   constructor(opts){
     super(opts)
     if(opts.socket) this.socket = opts.socket
-    if(opts.exchange) this.socket = opts.exchange
+    if(opts.exchange) this.exchange = opts.exchange
   }
   connect(){
-    if(this.socket) return this.onConnected()
+    if(this.exchange) {
+      this.logger.info("Using socketCluster exchange object");
+      return this.onConnected()
+    }
     return new Promise((resolve, reject)=>{
-      const socket = socketCluster.create(this.opts)
-      this.socket = socket
-      socket.on('connect', ()=> {
-        this.logger.info("SocketCluster client is connected.");
+      let socket
+      if(!this.socket){
+        socket = socketCluster.create(this.opts)
+        socket.on('connect', ()=> {
+          this.logger.info("SocketCluster client is connected.");
+          this.onConnected().then(resolve)
+        })
+        this.socket = socket
+      }else{
+        socket = this.socket
         this.onConnected().then(resolve)
-      })
+      }
       socket.on('error',(e)=>{
         this.logger.error("SocketCluster error.", e.message);
 				this.logger.debug(e);
@@ -41,18 +52,23 @@ class SocketClusterTranspoter extends Transporter {
   }
   subscribe(cmd, nodeID){
     const t = this.getTopicName(cmd, nodeID);
-    const channel = (this.socket || this.exchange).subscribe(t)
+    let sc = this.socket || this.exchange
+    const channel = sc.subscribe(t)
     channel.watch(msg=>this.incomingMessage(cmd, msg))
     this.logger.info(`Subscribe to channel: ${t}`)
   }
   publish(packet){
-    if(!this.socket) return Promise.resolve();
+    if(!(this.socket || this.exchange)) return Promise.resolve();
     return new Promise((resolve, reject)=>{
       let topic = this.getTopicName(packet.type, packet.target);
       const data = this.serialize(packet);
       this.logger.info(`publish to channel: ${topic}, data:${data}`)
-      this.socket.publish(topic,data,function(err,ackData){
-        if(err) return reject(err)
+      let sc = this.socket || this.exchange
+      sc.publish(topic,data,function(err,ackData){
+        if(err){
+          debug(err)
+          return reject(err)
+        }
         resolve(ackData)
       })
     });
