@@ -59,7 +59,6 @@ broker.createService({
   name:'sc-gw', // SocketCluster GateWay
   mixins:[SocketClusterService(worker)],
   settings: {
-    worker,
     routes: [{
       event: "call",
       whitelist: [
@@ -145,9 +144,6 @@ Example to add more additional info:
 broker.createService({
   name:'sc-gw',
   mixins:[SocketClusterService(worker)],
-  settings:{
-    worker, // Pass the sc worker to settings.
-  },
   methods:{
     getMeta(socket){ //construct the meta object.
       return {
