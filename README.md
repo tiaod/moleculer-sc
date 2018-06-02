@@ -223,10 +223,32 @@ scServer.addMiddleware(scServer.MIDDLEWARE_EMIT,
 
 ```
 
+## Error parser
+You can rewrite global-level error handler:
+> In handler, you must call the `respond`. Otherwise, the request is unhandled.
 
+```javascript
+broker.createService({
+  mixins: [SocketClusterService(worker)],
+  settings: {
+    routes: [{
+      event:'call',
+      callOptions: {
+        meta: { abc:123 }
+      }
+    }]		
+  },
+  methods:{
+    onError(err, respond){ //This is the default handler
+      const errObj = _.pick(err, ["name", "message", "code", "type", "data"]);
+      return respond(errObj)
+    }
+  }
+});
+```
 
 ## SocketCluster transporter
-You can alse use SocketCluster as moleculer's transporter! Which is also very simple:
+You can also use SocketCluster as moleculer's transporter!
 ```javascript
 // worker.js
 const { ServiceBroker } = require('moleculer')
@@ -294,6 +316,8 @@ broker.sc = socket || exchange //pass the socket or exchange object to broker, T
 ```
 
 # Change logs
+**0.7.0** - Add `onError` handler
+
 **0.6.1** - You can pass `socket` or `exchange` object to SCTransporter now.
 
 **0.6.0** - Breaking change:

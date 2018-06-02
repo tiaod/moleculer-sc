@@ -52,21 +52,25 @@ module.exports = function(worker){
         debug('MakeHandler', eventName)
         const svc = this
         return async function(data, respond){
-          debug(`handle ${eventName} event`,data, whitelist)
-          if(!data || !_.isString(data.action)) // validate action
-            return respond(new BadRequestError())
+          debug(`Handle ${eventName} event:`,data)
+          if(!data || !_.isString(data.action)){
+            debug(`BadRequest:`,data)
+            return svc.onError(new BadRequestError(), respond)
+          } // validate action
           let {action, params} = data
-          if(whitelist && !svc.checkWhitelist(action, whitelist)) //check whitelist
-            return respond(new ServiceNotFoundError(action))
+          if(whitelist && !svc.checkWhitelist(action, whitelist)){//check whitelist
+            debug(`Service "${action}" not found`)
+            return svc.onError(new ServiceNotFoundError(action), respond)
+          }
           try{
-            debug('callAction:', action, params, svc.getMeta(this))
+            debug('Call action:', action, params, svc.getMeta(this))
             let ret = await svc.broker.call(action, params, _.assign({
               meta:svc.getMeta(this)
             },opts))
             respond(null, ret)
           }catch(err){
-            respond(err)
-            debug('error:',err)
+            debug('Call action error:',err)
+            svc.onError(err, respond)
           }
         }
       },
@@ -74,6 +78,11 @@ module.exports = function(worker){
         return {
           user: socket.authToken
         }
+      },
+      onError(err, respond){
+        debug('onError',err)
+        const errObj = _.pick(err, ["name", "message", "code", "type", "data"]);
+        return respond(errObj)
       }
     }
   }
