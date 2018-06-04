@@ -62,7 +62,7 @@ class SocketClusterTranspoter extends Transporter {
     return new Promise((resolve, reject)=>{
       let topic = this.getTopicName(packet.type, packet.target);
       const data = this.serialize(packet);
-      this.logger.info(`publish to channel: ${topic}, data:${data}`)
+      debug(`publish to channel: ${topic}, data:${data}`)
       let sc = this.socket || this.exchange
       sc.publish(topic,data,function(err,ackData){
         if(err){
