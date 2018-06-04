@@ -257,8 +257,7 @@ let broker = new ServiceBroker({
   nodeID: "node-1",
   logger: console,
   transporter: new SCTransporter({
-    hostname:'localhost',
-    port:8000
+    exchange:this.exchange
   })
 })
 broker.createService({
