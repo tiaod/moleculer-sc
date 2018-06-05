@@ -79,8 +79,14 @@ test('should only allow methods in whitelist', async t=>{
           // Access to any actions in 'math' service
           "math.add"
         ]
+      },{
+        event: 'login',
+        type: 'login',
+        whitelist: [
+          "login.password",
+        ]
       }]
-      }
+    }
   })
   broker.createService({
     name:'math',
@@ -93,16 +99,39 @@ test('should only allow methods in whitelist', async t=>{
       }
     }
   })
+  broker.createService({
+    name: 'login',
+    actions: {
+      password(ctx){
+        if(ctx.params.user === 'tiaod' && ctx.params.password === 'pass'){
+           return {id:'tiaod'}
+        }else{
+          throw new Error('UNAUTH')
+        }
+      },
+      notAllowed(ctx){
+        return {id: 'tiaod'}
+      }
+    }
+  })
   broker.start()
   await sleep(100)
   const socket = new EventEmitter()
+  socket.setAuthToken = function(authToken){ //mock
+    socket.authToken = authToken
+  }
   worker.scServer.emit('connection', socket)
-  t.plan(2)
+  t.plan(3)
   socket.emit('call', {action:'math.add'},function(err, respond){
     if(!err) t.pass()
   })
   socket.emit('call', {action:'math.notAllowed'}, function(err, respond){
-    t.true(err instanceof ServiceNotFoundError) //TODO instance of
+    t.true(err.name === 'ServiceNotFoundError')
+  })
+  socket.emit('login', {action: 'login.password', params: {user: 'tiaod', password: 'pass'}}, function(err, respond){
+    if(!err){
+      t.true(socket.authToken.id == 'tiaod')
+    }
   })
   return sleep(1000)
 })
@@ -123,13 +152,13 @@ test('emit invaild data should return BadRequestError', async t=>{
   worker.scServer.emit('connection', socket)
   t.plan(3)
   socket.emit('call', undefined ,function(err, res){
-    t.true(err instanceof BadRequestError)
+    t.true(err.name === 'BadRequestError')
   })
   socket.emit('call', { action: undefined }, function(err, res){
-    t.true(err instanceof BadRequestError)
+    t.true(err.name === 'BadRequestError')
   })
   socket.emit('call', { action: {obj:true}}, function(err, res){
-    t.true(err instanceof BadRequestError)
+    t.true(err.name === 'BadRequestError')
   })
   return sleep(1000)
 })

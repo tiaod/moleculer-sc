@@ -1,25 +1,30 @@
-(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.socketCluster = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var SCSocket = require('./lib/scsocket');
-var SCSocketCreator = require('./lib/scsocketcreator');
+/**
+ * SocketCluster JavaScript client v13.0.0
+ */
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.socketCluster = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(_dereq_,module,exports){
+var SCClientSocket = _dereq_('./lib/scclientsocket');
+var factory = _dereq_('./lib/factory');
 
-module.exports.SCSocketCreator = SCSocketCreator;
-module.exports.SCSocket = SCSocket;
+module.exports.factory = factory;
+module.exports.SCClientSocket = SCClientSocket;
 
-module.exports.Emitter = require('component-emitter');
+module.exports.Emitter = _dereq_('component-emitter');
 
-module.exports.connect = function (options) {
-  return SCSocketCreator.connect(options);
+module.exports.create = function (options) {
+  return factory.create(options);
 };
 
-module.exports.destroy = function (options) {
-  return SCSocketCreator.destroy(options);
+module.exports.connect = module.exports.create;
+
+module.exports.destroy = function (socket) {
+  return factory.destroy(socket);
 };
 
-module.exports.connections = SCSocketCreator.connections;
+module.exports.clients = factory.clients;
 
-module.exports.version = '7.0.1';
+module.exports.version = '13.0.0';
 
-},{"./lib/scsocket":4,"./lib/scsocketcreator":5,"component-emitter":12}],2:[function(require,module,exports){
+},{"./lib/factory":3,"./lib/scclientsocket":5,"component-emitter":12}],2:[function(_dereq_,module,exports){
 (function (global){
 var AuthEngine = function () {
   this._internalStorage = {};
@@ -81,8 +86,133 @@ AuthEngine.prototype.loadToken = function (name, callback) {
 module.exports.AuthEngine = AuthEngine;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],3:[function(require,module,exports){
-var scErrors = require('sc-errors');
+},{}],3:[function(_dereq_,module,exports){
+(function (global){
+var SCClientSocket = _dereq_('./scclientsocket');
+var scErrors = _dereq_('sc-errors');
+var uuid = _dereq_('uuid');
+var InvalidArgumentsError = scErrors.InvalidArgumentsError;
+
+var _clients = {};
+
+function getMultiplexId(options) {
+  var protocolPrefix = options.secure ? 'https://' : 'http://';
+  var queryString = '';
+  if (options.query) {
+    if (typeof options.query == 'string') {
+      queryString = options.query;
+    } else {
+      var queryArray = [];
+      var queryMap = options.query;
+      for (var key in queryMap) {
+        if (queryMap.hasOwnProperty(key)) {
+          queryArray.push(key + '=' + queryMap[key]);
+        }
+      }
+      if (queryArray.length) {
+        queryString = '?' + queryArray.join('&');
+      }
+    }
+  }
+  var host;
+  if (options.host) {
+    host = options.host;
+  } else {
+    host = options.hostname + ':' + options.port;
+  }
+  return protocolPrefix + host + options.path + queryString;
+}
+
+function isUrlSecure() {
+  return global.location && location.protocol == 'https:';
+}
+
+function getPort(options, isSecureDefault) {
+  var isSecure = options.secure == null ? isSecureDefault : options.secure;
+  return options.port || (global.location && location.port ? location.port : isSecure ? 443 : 80);
+}
+
+function create(options) {
+  var self = this;
+
+  options = options || {};
+
+  if (options.host && !options.host.match(/[^:]+:\d{2,5}/)) {
+    throw new InvalidArgumentsError('The host option should include both' +
+      ' the hostname and the port number in the format "hostname:port"');
+  }
+
+  if (options.host && options.hostname) {
+    throw new InvalidArgumentsError('The host option should already include' +
+      ' the hostname and the port number in the format "hostname:port"' +
+      ' - Because of this, you should never use host and hostname options together');
+  }
+
+  if (options.host && options.port) {
+    throw new InvalidArgumentsError('The host option should already include' +
+      ' the hostname and the port number in the format "hostname:port"' +
+      ' - Because of this, you should never use host and port options together');
+  }
+
+  var isSecureDefault = isUrlSecure();
+
+  var opts = {
+    port: getPort(options, isSecureDefault),
+    hostname: global.location && location.hostname || 'localhost',
+    path: '/socketcluster/',
+    secure: isSecureDefault,
+    autoConnect: true,
+    autoReconnect: true,
+    autoSubscribeOnConnect: true,
+    connectTimeout: 20000,
+    ackTimeout: 10000,
+    timestampRequests: false,
+    timestampParam: 't',
+    authEngine: null,
+    authTokenName: 'socketCluster.authToken',
+    binaryType: 'arraybuffer',
+    multiplex: true,
+    pubSubBatchDuration: null,
+    cloneData: false
+  };
+  for (var i in options) {
+    if (options.hasOwnProperty(i)) {
+      opts[i] = options[i];
+    }
+  }
+  opts.clientMap = _clients;
+
+  if (opts.multiplex === false) {
+    opts.clientId = uuid.v4();
+    var socket = new SCClientSocket(opts);
+    _clients[opts.clientId] = socket;
+    return socket;
+  }
+  opts.clientId = getMultiplexId(opts);
+
+  if (_clients[opts.clientId]) {
+    if (opts.autoConnect) {
+      _clients[opts.clientId].connect();
+    }
+  } else {
+    _clients[opts.clientId] = new SCClientSocket(opts);
+  }
+  return _clients[opts.clientId];
+}
+
+function destroy(socket) {
+  socket.destroy();
+}
+
+module.exports = {
+  create: create,
+  destroy: destroy,
+  clients: _clients
+};
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"./scclientsocket":5,"sc-errors":21,"uuid":23}],4:[function(_dereq_,module,exports){
+var scErrors = _dereq_('sc-errors');
 var InvalidActionError = scErrors.InvalidActionError;
 
 var Response = function (socket, id) {
@@ -138,22 +268,23 @@ Response.prototype.callback = function (error, data) {
 
 module.exports.Response = Response;
 
-},{"sc-errors":22}],4:[function(require,module,exports){
+},{"sc-errors":21}],5:[function(_dereq_,module,exports){
 (function (global,Buffer){
-var Emitter = require('component-emitter');
-var SCChannel = require('sc-channel').SCChannel;
-var Response = require('./response').Response;
-var AuthEngine = require('./auth').AuthEngine;
-var formatter = require('sc-formatter');
-var SCTransport = require('./sctransport').SCTransport;
-var querystring = require('querystring');
-var LinkedList = require('linked-list');
-var base64 = require('base-64');
-var clone = require('clone');
+var Emitter = _dereq_('component-emitter');
+var SCChannel = _dereq_('sc-channel').SCChannel;
+var Response = _dereq_('./response').Response;
+var AuthEngine = _dereq_('./auth').AuthEngine;
+var formatter = _dereq_('sc-formatter');
+var SCTransport = _dereq_('./sctransport').SCTransport;
+var querystring = _dereq_('querystring');
+var LinkedList = _dereq_('linked-list');
+var base64 = _dereq_('base-64');
+var clone = _dereq_('clone');
 
-var scErrors = require('sc-errors');
+var scErrors = _dereq_('sc-errors');
 var InvalidArgumentsError = scErrors.InvalidArgumentsError;
 var InvalidMessageError = scErrors.InvalidMessageError;
+var InvalidActionError = scErrors.InvalidActionError;
 var SocketProtocolError = scErrors.SocketProtocolError;
 var TimeoutError = scErrors.TimeoutError;
 var BadConnectionError = scErrors.BadConnectionError;
@@ -161,7 +292,7 @@ var BadConnectionError = scErrors.BadConnectionError;
 var isBrowser = typeof window != 'undefined';
 
 
-var SCSocket = function (opts) {
+var SCClientSocket = function (opts) {
   var self = this;
 
   Emitter.call(this);
@@ -174,6 +305,7 @@ var SCSocket = function (opts) {
   this.pendingReconnect = false;
   this.pendingReconnectTimeout = null;
   this.preparingPendingSubscriptions = false;
+  this.clientId = opts.clientId;
 
   this.connectTimeout = opts.connectTimeout;
   this.ackTimeout = opts.ackTimeout;
@@ -184,6 +316,10 @@ var SCSocket = function (opts) {
   // pingTimeout will be ackTimeout at the start, but it will
   // be updated with values provided by the 'connect' event
   this.pingTimeout = this.ackTimeout;
+  this.pingTimeoutDisabled = !!opts.pingTimeoutDisabled;
+  this.active = true;
+
+  this._clientMap = opts.clientMap || {};
 
   var maxTimeout = Math.pow(2, 31) - 1;
 
@@ -196,16 +332,15 @@ var SCSocket = function (opts) {
 
   verifyDuration('connectTimeout');
   verifyDuration('ackTimeout');
-  verifyDuration('pingTimeout');
 
   this._localEvents = {
     'connect': 1,
     'connectAbort': 1,
+    'close': 1,
     'disconnect': 1,
     'message': 1,
     'error': 1,
     'raw': 1,
-    'fail': 1,
     'kickOut': 1,
     'subscribe': 1,
     'unsubscribe': 1,
@@ -276,36 +411,37 @@ var SCSocket = function (opts) {
     this.options.query = querystring.parse(this.options.query);
   }
 
+  this._channelEmitter = new Emitter();
+
+  this._unloadHandler = function () {
+    self.disconnect();
+  };
+
+  if (isBrowser && this.disconnectOnUnload && global.addEventListener) {
+    global.addEventListener('beforeunload', this._unloadHandler, false);
+  }
+  this._clientMap[this.clientId] = this;
+
   if (this.options.autoConnect) {
     this.connect();
   }
-
-  this._channelEmitter = new Emitter();
-
-  if (isBrowser && this.disconnectOnUnload) {
-    this._unloadHandler = function () {
-      self.disconnect();
-    };
-
-    global.addEventListener('beforeunload', this._unloadHandler, false);
-  }
 };
 
-SCSocket.prototype = Object.create(Emitter.prototype);
+SCClientSocket.prototype = Object.create(Emitter.prototype);
 
-SCSocket.CONNECTING = SCSocket.prototype.CONNECTING = SCTransport.prototype.CONNECTING;
-SCSocket.OPEN = SCSocket.prototype.OPEN = SCTransport.prototype.OPEN;
-SCSocket.CLOSED = SCSocket.prototype.CLOSED = SCTransport.prototype.CLOSED;
+SCClientSocket.CONNECTING = SCClientSocket.prototype.CONNECTING = SCTransport.prototype.CONNECTING;
+SCClientSocket.OPEN = SCClientSocket.prototype.OPEN = SCTransport.prototype.OPEN;
+SCClientSocket.CLOSED = SCClientSocket.prototype.CLOSED = SCTransport.prototype.CLOSED;
 
-SCSocket.AUTHENTICATED = SCSocket.prototype.AUTHENTICATED = 'authenticated';
-SCSocket.UNAUTHENTICATED = SCSocket.prototype.UNAUTHENTICATED = 'unauthenticated';
+SCClientSocket.AUTHENTICATED = SCClientSocket.prototype.AUTHENTICATED = 'authenticated';
+SCClientSocket.UNAUTHENTICATED = SCClientSocket.prototype.UNAUTHENTICATED = 'unauthenticated';
 
-SCSocket.PENDING = SCSocket.prototype.PENDING = 'pending';
+SCClientSocket.PENDING = SCClientSocket.prototype.PENDING = 'pending';
 
-SCSocket.ignoreStatuses = scErrors.socketProtocolIgnoreStatuses;
-SCSocket.errorStatuses = scErrors.socketProtocolErrorStatuses;
+SCClientSocket.ignoreStatuses = scErrors.socketProtocolIgnoreStatuses;
+SCClientSocket.errorStatuses = scErrors.socketProtocolErrorStatuses;
 
-SCSocket.prototype._privateEventHandlerMap = {
+SCClientSocket.prototype._privateEventHandlerMap = {
   '#publish': function (data) {
     var undecoratedChannelName = this._undecorateChannelName(data.channel);
     var isSubscribed = this.isSubscribed(undecoratedChannelName, true);
@@ -365,15 +501,15 @@ SCSocket.prototype._privateEventHandlerMap = {
   }
 };
 
-SCSocket.prototype.getState = function () {
+SCClientSocket.prototype.getState = function () {
   return this.state;
 };
 
-SCSocket.prototype.getBytesReceived = function () {
+SCClientSocket.prototype.getBytesReceived = function () {
   return this.transport.getBytesReceived();
 };
 
-SCSocket.prototype.deauthenticate = function (callback) {
+SCClientSocket.prototype.deauthenticate = function (callback) {
   var self = this;
 
   this.auth.removeToken(this.authTokenName, function (err, oldToken) {
@@ -391,8 +527,14 @@ SCSocket.prototype.deauthenticate = function (callback) {
   });
 };
 
-SCSocket.prototype.connect = SCSocket.prototype.open = function () {
+SCClientSocket.prototype.connect = SCClientSocket.prototype.open = function () {
   var self = this;
+
+  if (!this.active) {
+    var error = new InvalidActionError('Cannot connect a destroyed client');
+    this._onSCError(error);
+    return;
+  }
 
   if (this.state == this.CLOSED) {
     this.pendingReconnect = false;
@@ -433,12 +575,12 @@ SCSocket.prototype.connect = SCSocket.prototype.open = function () {
   }
 };
 
-SCSocket.prototype.reconnect = function () {
-  this.disconnect();
+SCClientSocket.prototype.reconnect = function (code, data) {
+  this.disconnect(code, data);
   this.connect();
 };
 
-SCSocket.prototype.disconnect = function (code, data) {
+SCClientSocket.prototype.disconnect = function (code, data) {
   code = code || 1000;
 
   if (typeof code != 'number') {
@@ -454,16 +596,19 @@ SCSocket.prototype.disconnect = function (code, data) {
   }
 };
 
-SCSocket.prototype.destroy = function () {
-  if (this._unloadHandler) {
+SCClientSocket.prototype.destroy = function (code, data) {
+  if (isBrowser && global.removeEventListener) {
     global.removeEventListener('beforeunload', this._unloadHandler, false);
   }
-  this.disconnect();
+  this.active = false;
+  this.disconnect(code, data);
+  delete this._clientMap[this.clientId];
 };
 
-SCSocket.prototype._changeToUnauthenticatedStateAndClearTokens = function () {
+SCClientSocket.prototype._changeToUnauthenticatedStateAndClearTokens = function () {
   if (this.authState != this.UNAUTHENTICATED) {
     var oldState = this.authState;
+    var oldSignedToken = this.signedAuthToken;
     this.authState = this.UNAUTHENTICATED;
     this.signedAuthToken = null;
     this.authToken = null;
@@ -473,14 +618,11 @@ SCSocket.prototype._changeToUnauthenticatedStateAndClearTokens = function () {
       newState: this.authState
     };
     Emitter.prototype.emit.call(this, 'authStateChange', stateChangeData);
-    if (oldState == this.AUTHENTICATED) {
-      Emitter.prototype.emit.call(this, 'deauthenticate');
-    }
-    Emitter.prototype.emit.call(this, 'authTokenChange', this.signedAuthToken);
+    Emitter.prototype.emit.call(this, 'deauthenticate', oldSignedToken);
   }
 };
 
-SCSocket.prototype._changeToAuthenticatedState = function (signedAuthToken) {
+SCClientSocket.prototype._changeToAuthenticatedState = function (signedAuthToken) {
   this.signedAuthToken = signedAuthToken;
   this.authToken = this._extractAuthTokenData(signedAuthToken);
 
@@ -498,12 +640,11 @@ SCSocket.prototype._changeToAuthenticatedState = function (signedAuthToken) {
     }
 
     Emitter.prototype.emit.call(this, 'authStateChange', stateChangeData);
-    Emitter.prototype.emit.call(this, 'authenticate', signedAuthToken);
   }
-  Emitter.prototype.emit.call(this, 'authTokenChange', signedAuthToken);
+  Emitter.prototype.emit.call(this, 'authenticate', signedAuthToken);
 };
 
-SCSocket.prototype.decodeBase64 = function (encodedString) {
+SCClientSocket.prototype.decodeBase64 = function (encodedString) {
   var decodedString;
   if (typeof Buffer == 'undefined') {
     if (global.atob) {
@@ -518,7 +659,7 @@ SCSocket.prototype.decodeBase64 = function (encodedString) {
   return decodedString;
 };
 
-SCSocket.prototype.encodeBase64 = function (decodedString) {
+SCClientSocket.prototype.encodeBase64 = function (decodedString) {
   var encodedString;
   if (typeof Buffer == 'undefined') {
     if (global.btoa) {
@@ -533,7 +674,7 @@ SCSocket.prototype.encodeBase64 = function (decodedString) {
   return encodedString;
 };
 
-SCSocket.prototype._extractAuthTokenData = function (signedAuthToken) {
+SCClientSocket.prototype._extractAuthTokenData = function (signedAuthToken) {
   var tokenParts = (signedAuthToken || '').split('.');
   var encodedTokenData = tokenParts[1];
   if (encodedTokenData != null) {
@@ -548,20 +689,19 @@ SCSocket.prototype._extractAuthTokenData = function (signedAuthToken) {
   return null;
 };
 
-SCSocket.prototype.getAuthToken = function () {
+SCClientSocket.prototype.getAuthToken = function () {
   return this.authToken;
 };
 
-SCSocket.prototype.getSignedAuthToken = function () {
+SCClientSocket.prototype.getSignedAuthToken = function () {
   return this.signedAuthToken;
 };
 
 // Perform client-initiated authentication by providing an encrypted token string.
-SCSocket.prototype.authenticate = function (signedAuthToken, callback) {
+SCClientSocket.prototype.authenticate = function (signedAuthToken, callback) {
   var self = this;
 
   this.emit('#authenticate', signedAuthToken, function (err, authStatus) {
-
     if (authStatus && authStatus.isAuthenticated != null) {
       // If authStatus is correctly formatted (has an isAuthenticated property),
       // then we will rehydrate the authError.
@@ -600,7 +740,7 @@ SCSocket.prototype.authenticate = function (signedAuthToken, callback) {
   });
 };
 
-SCSocket.prototype._tryReconnect = function (initialDelay) {
+SCClientSocket.prototype._tryReconnect = function (initialDelay) {
   var self = this;
 
   var exponent = this.connectAttempts++;
@@ -628,7 +768,7 @@ SCSocket.prototype._tryReconnect = function (initialDelay) {
   }, timeout);
 };
 
-SCSocket.prototype._onSCOpen = function (status) {
+SCClientSocket.prototype._onSCOpen = function (status) {
   var self = this;
 
   this.preparingPendingSubscriptions = true;
@@ -645,7 +785,7 @@ SCSocket.prototype._onSCOpen = function (status) {
   } else {
     // This can happen if auth.loadToken (in sctransport.js) fails with
     // an error - This means that the signedAuthToken cannot be loaded by
-    // the auth engine and therefore, we need to unauthenticate the socket.
+    // the auth engine and therefore, we need to unauthenticate the client.
     this._changeToUnauthenticatedStateAndClearTokens();
   }
 
@@ -661,10 +801,12 @@ SCSocket.prototype._onSCOpen = function (status) {
     self.processPendingSubscriptions();
   });
 
-  this._flushEmitBuffer();
+  if (this.state == this.OPEN) {
+    this._flushEmitBuffer();
+  }
 };
 
-SCSocket.prototype._onSCError = function (err) {
+SCClientSocket.prototype._onSCError = function (err) {
   var self = this;
 
   // Throw error in different stack frame so that error handling
@@ -678,7 +820,7 @@ SCSocket.prototype._onSCError = function (err) {
   }, 0);
 };
 
-SCSocket.prototype._suspendSubscriptions = function () {
+SCClientSocket.prototype._suspendSubscriptions = function () {
   var channel, newState;
   for (var channelName in this.channels) {
     if (this.channels.hasOwnProperty(channelName)) {
@@ -696,7 +838,7 @@ SCSocket.prototype._suspendSubscriptions = function () {
   }
 };
 
-SCSocket.prototype._abortAllPendingEventsDueToBadConnection = function (failureType) {
+SCClientSocket.prototype._abortAllPendingEventsDueToBadConnection = function (failureType) {
   var currentNode = this._emitBuffer.head;
   var nextNode;
 
@@ -716,10 +858,14 @@ SCSocket.prototype._abortAllPendingEventsDueToBadConnection = function (failureT
       var error = new BadConnectionError(errorMessage, failureType);
       callback.call(eventObject, error, eventObject);
     }
+    // Cleanup any pending response callback in the transport layer too.
+    if (eventObject.cid) {
+      this.transport.cancelPendingResponse(eventObject.cid);
+    }
   }
 };
 
-SCSocket.prototype._onSCClose = function (code, data, openAbort) {
+SCClientSocket.prototype._onSCClose = function (code, data, openAbort) {
   var self = this;
 
   this.id = null;
@@ -739,6 +885,7 @@ SCSocket.prototype._onSCClose = function (code, data, openAbort) {
   // or on client pong timeout (4001)
   // or on close without status (1005)
   // or on handshake failure (4003)
+  // or on handshake rejection (4008)
   // or on socket hung up (1006)
   if (this.options.autoReconnect) {
     if (code == 4000 || code == 4001 || code == 1005) {
@@ -760,20 +907,21 @@ SCSocket.prototype._onSCClose = function (code, data, openAbort) {
   } else {
     Emitter.prototype.emit.call(self, 'disconnect', code, data);
   }
+  Emitter.prototype.emit.call(self, 'close', code, data);
 
-  if (!SCSocket.ignoreStatuses[code]) {
-    var failureMessage;
+  if (!SCClientSocket.ignoreStatuses[code]) {
+    var closeMessage;
     if (data) {
-      failureMessage = 'Socket connection failed: ' + data;
+      closeMessage = 'Socket connection closed with status code ' + code + ' and reason: ' + data;
     } else {
-      failureMessage = 'Socket connection failed for unknown reasons';
+      closeMessage = 'Socket connection closed with status code ' + code;
     }
-    var err = new SocketProtocolError(SCSocket.errorStatuses[code] || failureMessage, code);
+    var err = new SocketProtocolError(SCClientSocket.errorStatuses[code] || closeMessage, code);
     this._onSCError(err);
   }
 };
 
-SCSocket.prototype._onSCEvent = function (event, data, res) {
+SCClientSocket.prototype._onSCEvent = function (event, data, res) {
   var handler = this._privateEventHandlerMap[event];
   if (handler) {
     handler.call(this, data, res);
@@ -784,15 +932,15 @@ SCSocket.prototype._onSCEvent = function (event, data, res) {
   }
 };
 
-SCSocket.prototype.decode = function (message) {
+SCClientSocket.prototype.decode = function (message) {
   return this.transport.decode(message);
 };
 
-SCSocket.prototype.encode = function (object) {
+SCClientSocket.prototype.encode = function (object) {
   return this.transport.encode(object);
 };
 
-SCSocket.prototype._flushEmitBuffer = function () {
+SCClientSocket.prototype._flushEmitBuffer = function () {
   var currentNode = this._emitBuffer.head;
   var nextNode;
 
@@ -805,7 +953,7 @@ SCSocket.prototype._flushEmitBuffer = function () {
   }
 };
 
-SCSocket.prototype._handleEventAckTimeout = function (eventObject, eventNode) {
+SCClientSocket.prototype._handleEventAckTimeout = function (eventObject, eventNode) {
   if (eventNode) {
     eventNode.detach();
   }
@@ -817,9 +965,13 @@ SCSocket.prototype._handleEventAckTimeout = function (eventObject, eventNode) {
     var error = new TimeoutError("Event response for '" + eventObject.event + "' timed out");
     callback.call(eventObject, error, eventObject);
   }
+  // Cleanup any pending response callback in the transport layer too.
+  if (eventObject.cid) {
+    this.transport.cancelPendingResponse(eventObject.cid);
+  }
 };
 
-SCSocket.prototype._emit = function (event, data, callback) {
+SCClientSocket.prototype._emit = function (event, data, callback) {
   var self = this;
 
   if (this.state == this.CLOSED) {
@@ -844,25 +996,27 @@ SCSocket.prototype._emit = function (event, data, callback) {
   }, this.ackTimeout);
 
   this._emitBuffer.append(eventNode);
-
   if (this.state == this.OPEN) {
     this._flushEmitBuffer();
   }
 };
 
-SCSocket.prototype.send = function (data) {
+SCClientSocket.prototype.send = function (data) {
   this.transport.send(data);
 };
 
-SCSocket.prototype.emit = function (event, data, callback) {
+SCClientSocket.prototype.emit = function (event, data, callback) {
   if (this._localEvents[event] == null) {
     this._emit(event, data, callback);
-  } else {
+  } else if (event == 'error') {
     Emitter.prototype.emit.call(this, event, data);
+  } else {
+    var error = new InvalidActionError('The "' + event + '" event is reserved and cannot be emitted on a client socket');
+    this._onSCError(error);
   }
 };
 
-SCSocket.prototype.publish = function (channelName, data, callback) {
+SCClientSocket.prototype.publish = function (channelName, data, callback) {
   var pubData = {
     channel: this._decorateChannelName(channelName),
     data: data
@@ -870,7 +1024,7 @@ SCSocket.prototype.publish = function (channelName, data, callback) {
   this.emit('#publish', pubData, callback);
 };
 
-SCSocket.prototype._triggerChannelSubscribe = function (channel, subscriptionOptions) {
+SCClientSocket.prototype._triggerChannelSubscribe = function (channel, subscriptionOptions) {
   var channelName = channel.name;
 
   if (channel.state != channel.SUBSCRIBED) {
@@ -890,7 +1044,7 @@ SCSocket.prototype._triggerChannelSubscribe = function (channel, subscriptionOpt
   }
 };
 
-SCSocket.prototype._triggerChannelSubscribeFail = function (err, channel, subscriptionOptions) {
+SCClientSocket.prototype._triggerChannelSubscribeFail = function (err, channel, subscriptionOptions) {
   var channelName = channel.name;
   var meetsAuthRequirements = !channel.waitForAuth || this.authState == this.AUTHENTICATED;
 
@@ -903,28 +1057,28 @@ SCSocket.prototype._triggerChannelSubscribeFail = function (err, channel, subscr
 };
 
 // Cancel any pending subscribe callback
-SCSocket.prototype._cancelPendingSubscribeCallback = function (channel) {
+SCClientSocket.prototype._cancelPendingSubscribeCallback = function (channel) {
   if (channel._pendingSubscriptionCid != null) {
     this.transport.cancelPendingResponse(channel._pendingSubscriptionCid);
     delete channel._pendingSubscriptionCid;
   }
 };
 
-SCSocket.prototype._decorateChannelName = function (channelName) {
+SCClientSocket.prototype._decorateChannelName = function (channelName) {
   if (this.channelPrefix) {
     channelName = this.channelPrefix + channelName;
   }
   return channelName;
 };
 
-SCSocket.prototype._undecorateChannelName = function (decoratedChannelName) {
+SCClientSocket.prototype._undecorateChannelName = function (decoratedChannelName) {
   if (this.channelPrefix && decoratedChannelName.indexOf(this.channelPrefix) == 0) {
     return decoratedChannelName.replace(this.channelPrefix, '');
   }
   return decoratedChannelName;
 };
 
-SCSocket.prototype._trySubscribe = function (channel) {
+SCClientSocket.prototype._trySubscribe = function (channel) {
   var self = this;
 
   var meetsAuthRequirements = !channel.waitForAuth || this.authState == this.AUTHENTICATED;
@@ -947,6 +1101,10 @@ SCSocket.prototype._trySubscribe = function (channel) {
     if (channel.data) {
       subscriptionOptions.data = channel.data;
     }
+    if (channel.batch) {
+      options.batch = true;
+      subscriptionOptions.batch = true;
+    }
 
     channel._pendingSubscriptionCid = this.transport.emit(
       '#subscribe', subscriptionOptions, options,
@@ -963,7 +1121,7 @@ SCSocket.prototype._trySubscribe = function (channel) {
   }
 };
 
-SCSocket.prototype.subscribe = function (channelName, options) {
+SCClientSocket.prototype.subscribe = function (channelName, options) {
   var channel = this.channels[channelName];
 
   if (!channel) {
@@ -981,7 +1139,7 @@ SCSocket.prototype.subscribe = function (channelName, options) {
   return channel;
 };
 
-SCSocket.prototype._triggerChannelUnsubscribe = function (channel, newState) {
+SCClientSocket.prototype._triggerChannelUnsubscribe = function (channel, newState) {
   var channelName = channel.name;
   var oldState = channel.state;
 
@@ -1005,27 +1163,29 @@ SCSocket.prototype._triggerChannelUnsubscribe = function (channel, newState) {
   }
 };
 
-SCSocket.prototype._tryUnsubscribe = function (channel) {
+SCClientSocket.prototype._tryUnsubscribe = function (channel) {
   var self = this;
 
   if (this.state == this.OPEN) {
     var options = {
       noTimeout: true
     };
+    if (channel.batch) {
+      options.batch = true;
+    }
     // If there is a pending subscribe action, cancel the callback
     this._cancelPendingSubscribeCallback(channel);
 
     // This operation cannot fail because the TCP protocol guarantees delivery
     // so long as the connection remains open. If the connection closes,
-    // the server will automatically unsubscribe the socket and thus complete
+    // the server will automatically unsubscribe the client and thus complete
     // the operation on the server side.
     var decoratedChannelName = this._decorateChannelName(channel.name);
     this.transport.emit('#unsubscribe', decoratedChannelName, options);
   }
 };
 
-SCSocket.prototype.unsubscribe = function (channelName) {
-
+SCClientSocket.prototype.unsubscribe = function (channelName) {
   var channel = this.channels[channelName];
 
   if (channel) {
@@ -1037,7 +1197,7 @@ SCSocket.prototype.unsubscribe = function (channelName) {
   }
 };
 
-SCSocket.prototype.channel = function (channelName, options) {
+SCClientSocket.prototype.channel = function (channelName, options) {
   var currentChannel = this.channels[channelName];
 
   if (!currentChannel) {
@@ -1047,14 +1207,17 @@ SCSocket.prototype.channel = function (channelName, options) {
   return currentChannel;
 };
 
-SCSocket.prototype.destroyChannel = function (channelName) {
+SCClientSocket.prototype.destroyChannel = function (channelName) {
   var channel = this.channels[channelName];
-  channel.unwatch();
-  channel.unsubscribe();
-  delete this.channels[channelName];
+
+  if (channel) {
+    channel.unwatch();
+    channel.unsubscribe();
+    delete this.channels[channelName];
+  }
 };
 
-SCSocket.prototype.subscriptions = function (includePending) {
+SCClientSocket.prototype.subscriptions = function (includePending) {
   var subs = [];
   var channel, includeChannel;
   for (var channelName in this.channels) {
@@ -1076,7 +1239,7 @@ SCSocket.prototype.subscriptions = function (includePending) {
   return subs;
 };
 
-SCSocket.prototype.isSubscribed = function (channelName, includePending) {
+SCClientSocket.prototype.isSubscribed = function (channelName, includePending) {
   var channel = this.channels[channelName];
   if (includePending) {
     return !!channel && (channel.state == channel.SUBSCRIBED ||
@@ -1085,7 +1248,7 @@ SCSocket.prototype.isSubscribed = function (channelName, includePending) {
   return !!channel && channel.state == channel.SUBSCRIBED;
 };
 
-SCSocket.prototype.processPendingSubscriptions = function () {
+SCClientSocket.prototype.processPendingSubscriptions = function () {
   var self = this;
 
   this.preparingPendingSubscriptions = false;
@@ -1118,14 +1281,14 @@ SCSocket.prototype.processPendingSubscriptions = function () {
   });
 };
 
-SCSocket.prototype.watch = function (channelName, handler) {
+SCClientSocket.prototype.watch = function (channelName, handler) {
   if (typeof handler != 'function') {
     throw new InvalidArgumentsError('No handler function was provided');
   }
   this._channelEmitter.on(channelName, handler);
 };
 
-SCSocket.prototype.unwatch = function (channelName, handler) {
+SCClientSocket.prototype.unwatch = function (channelName, handler) {
   if (handler) {
     this._channelEmitter.removeListener(channelName, handler);
   } else {
@@ -1133,143 +1296,18 @@ SCSocket.prototype.unwatch = function (channelName, handler) {
   }
 };
 
-SCSocket.prototype.watchers = function (channelName) {
+SCClientSocket.prototype.watchers = function (channelName) {
   return this._channelEmitter.listeners(channelName);
 };
 
-module.exports = SCSocket;
+module.exports = SCClientSocket;
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("buffer").Buffer)
-},{"./auth":2,"./response":3,"./sctransport":6,"base-64":8,"buffer":10,"clone":11,"component-emitter":12,"linked-list":16,"querystring":19,"sc-channel":20,"sc-errors":22,"sc-formatter":23}],5:[function(require,module,exports){
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},_dereq_("buffer").Buffer)
+},{"./auth":2,"./response":4,"./sctransport":6,"base-64":8,"buffer":10,"clone":11,"component-emitter":12,"linked-list":15,"querystring":18,"sc-channel":19,"sc-errors":21,"sc-formatter":22}],6:[function(_dereq_,module,exports){
 (function (global){
-var SCSocket = require('./scsocket');
-var scErrors = require('sc-errors');
-var InvalidArgumentsError = scErrors.InvalidArgumentsError;
-
-var _connections = {};
-
-function getMultiplexId(options) {
-  var protocolPrefix = options.secure ? 'https://' : 'http://';
-  var queryString = '';
-  if (options.query) {
-    if (typeof options.query == 'string') {
-      queryString = options.query;
-    } else {
-      var queryArray = [];
-      var queryMap = options.query;
-      for (var key in queryMap) {
-        if (queryMap.hasOwnProperty(key)) {
-          queryArray.push(key + '=' + queryMap[key]);
-        }
-      }
-      if (queryArray.length) {
-        queryString = '?' + queryArray.join('&');
-      }
-    }
-  }
-  var host;
-  if (options.host) {
-    host = options.host;
-  } else {
-    host = options.hostname + ':' + options.port;
-  }
-  return protocolPrefix + host + options.path + queryString;
-}
-
-function isUrlSecure() {
-  return global.location && location.protocol == 'https:';
-}
-
-function getPort(options, isSecureDefault) {
-  var isSecure = options.secure == null ? isSecureDefault : options.secure;
-  return options.port || (global.location && location.port ? location.port : isSecure ? 443 : 80);
-}
-
-function connect(options) {
-  var self = this;
-
-  options = options || {};
-
-  if (options.host && options.port) {
-    throw new InvalidArgumentsError('The host option should already include the' +
-      ' port number in the format hostname:port - Because of this, the host and port options' +
-      ' cannot be specified together; use the hostname option instead');
-  }
-
-  var isSecureDefault = isUrlSecure();
-
-  var opts = {
-    port: getPort(options, isSecureDefault),
-    hostname: global.location && location.hostname,
-    path: '/socketcluster/',
-    secure: isSecureDefault,
-    autoConnect: true,
-    autoReconnect: true,
-    autoSubscribeOnConnect: true,
-    connectTimeout: 20000,
-    ackTimeout: 10000,
-    timestampRequests: false,
-    timestampParam: 't',
-    authEngine: null,
-    authTokenName: 'socketCluster.authToken',
-    binaryType: 'arraybuffer',
-    multiplex: true,
-    cloneData: false
-  };
-  for (var i in options) {
-    if (options.hasOwnProperty(i)) {
-      opts[i] = options[i];
-    }
-  }
-  var multiplexId = getMultiplexId(opts);
-  if (opts.multiplex === false) {
-    return new SCSocket(opts);
-  }
-  if (_connections[multiplexId]) {
-    _connections[multiplexId].connect();
-  } else {
-    _connections[multiplexId] = new SCSocket(opts);
-  }
-  return _connections[multiplexId];
-}
-
-function destroy(options) {
-  var self = this;
-
-  options = options || {};
-  var isSecureDefault = isUrlSecure();
-
-  var opts = {
-    port: getPort(options, isSecureDefault),
-    hostname: global.location && location.hostname,
-    path: '/socketcluster/',
-    secure: isSecureDefault
-  };
-  for (var i in options) {
-    if (options.hasOwnProperty(i)) {
-      opts[i] = options[i];
-    }
-  }
-  var multiplexId = getMultiplexId(opts);
-  var socket = _connections[multiplexId];
-  if (socket) {
-    socket.destroy();
-  }
-  delete _connections[multiplexId];
-}
-
-module.exports = {
-  connect: connect,
-  destroy: destroy,
-  connections: _connections
-};
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./scsocket":4,"sc-errors":22}],6:[function(require,module,exports){
-(function (global){
-var Emitter = require('component-emitter');
-var Response = require('./response').Response;
-var querystring = require('querystring');
+var Emitter = _dereq_('component-emitter');
+var Response = _dereq_('./response').Response;
+var querystring = _dereq_('querystring');
 var WebSocket;
 var createWebSocket;
 
@@ -1279,77 +1317,42 @@ if (global.WebSocket) {
     return new WebSocket(uri);
   };
 } else {
-  WebSocket = require('ws');
+  WebSocket = _dereq_('ws');
   createWebSocket = function (uri, options) {
     return new WebSocket(uri, null, options);
   };
 }
 
-var scErrors = require('sc-errors');
+var scErrors = _dereq_('sc-errors');
 var TimeoutError = scErrors.TimeoutError;
 var BadConnectionError = scErrors.BadConnectionError;
 
 
 var SCTransport = function (authEngine, codecEngine, options) {
+  var self = this;
+
   this.state = this.CLOSED;
   this.auth = authEngine;
   this.codec = codecEngine;
   this.options = options;
   this.connectTimeout = options.connectTimeout;
   this.pingTimeout = options.ackTimeout;
+  this.pingTimeoutDisabled = !!options.pingTimeoutDisabled;
   this.callIdGenerator = options.callIdGenerator;
   this.authTokenName = options.authTokenName;
 
   this._pingTimeoutTicker = null;
   this._callbackMap = {};
+  this._batchSendList = [];
 
-  this.open();
-};
-
-SCTransport.prototype = Object.create(Emitter.prototype);
-
-SCTransport.CONNECTING = SCTransport.prototype.CONNECTING = 'connecting';
-SCTransport.OPEN = SCTransport.prototype.OPEN = 'open';
-SCTransport.CLOSED = SCTransport.prototype.CLOSED = 'closed';
-
-SCTransport.prototype.uri = function () {
-  var query = this.options.query || {};
-  var schema = this.options.secure ? 'wss' : 'ws';
-
-  if (this.options.timestampRequests) {
-    query[this.options.timestampParam] = (new Date()).getTime();
-  }
-
-  query = querystring.encode(query);
-
-  if (query.length) {
-    query = '?' + query;
-  }
-
-  var host;
-  if (this.options.host) {
-    host = this.options.host;
-  } else {
-    var port = '';
-
-    if (this.options.port && ((schema == 'wss' && this.options.port != 443)
-      || (schema == 'ws' && this.options.port != 80))) {
-      port = ':' + this.options.port;
-    }
-    host = this.options.hostname + port;
-  }
-
-  return schema + '://' + host + this.options.path + query;
-};
-
-SCTransport.prototype.open = function () {
-  var self = this;
+  // Open the connection.
 
   this.state = this.CONNECTING;
   var uri = this.uri();
 
   var wsSocket = createWebSocket(uri, this.options);
   wsSocket.binaryType = this.options.binaryType;
+
   this.socket = wsSocket;
 
   wsSocket.onopen = function () {
@@ -1392,6 +1395,42 @@ SCTransport.prototype.open = function () {
   }, this.connectTimeout);
 };
 
+SCTransport.prototype = Object.create(Emitter.prototype);
+
+SCTransport.CONNECTING = SCTransport.prototype.CONNECTING = 'connecting';
+SCTransport.OPEN = SCTransport.prototype.OPEN = 'open';
+SCTransport.CLOSED = SCTransport.prototype.CLOSED = 'closed';
+
+SCTransport.prototype.uri = function () {
+  var query = this.options.query || {};
+  var schema = this.options.secure ? 'wss' : 'ws';
+
+  if (this.options.timestampRequests) {
+    query[this.options.timestampParam] = (new Date()).getTime();
+  }
+
+  query = querystring.encode(query);
+
+  if (query.length) {
+    query = '?' + query;
+  }
+
+  var host;
+  if (this.options.host) {
+    host = this.options.host;
+  } else {
+    var port = '';
+
+    if (this.options.port && ((schema == 'wss' && this.options.port != 443)
+      || (schema == 'ws' && this.options.port != 80))) {
+      port = ':' + this.options.port;
+    }
+    host = this.options.hostname + port;
+  }
+
+  return schema + '://' + host + this.options.path + query;
+};
+
 SCTransport.prototype._onOpen = function () {
   var self = this;
 
@@ -1400,9 +1439,15 @@ SCTransport.prototype._onOpen = function () {
 
   this._handshake(function (err, status) {
     if (err) {
+      var statusCode;
+      if (status && status.code) {
+        statusCode = status.code;
+      } else {
+        statusCode = 4003;
+      }
       self._onError(err);
-      self._onClose(4003);
-      self.socket.close(4003);
+      self._onClose(statusCode, err.toString());
+      self.socket.close(statusCode);
     } else {
       self.state = self.OPEN;
       Emitter.prototype.emit.call(self, 'open', status);
@@ -1466,6 +1511,8 @@ SCTransport.prototype._onClose = function (code, data) {
   delete this.socket.onerror;
 
   clearTimeout(this._connectTimeoutRef);
+  clearTimeout(this._pingTimeoutTicker);
+  clearTimeout(this._batchTimeout);
 
   if (this.state == this.OPEN) {
     this.state = this.CLOSED;
@@ -1476,6 +1523,27 @@ SCTransport.prototype._onClose = function (code, data) {
     this.state = this.CLOSED;
     Emitter.prototype.emit.call(this, 'openAbort', code, data);
     this._abortAllPendingEventsDueToBadConnection('connectAbort');
+  }
+};
+
+SCTransport.prototype._handleEventObject = function (obj, message) {
+  if (obj && obj.event != null) {
+    var response = new Response(this, obj.cid);
+    Emitter.prototype.emit.call(this, 'event', obj.event, obj.data, response);
+  } else if (obj && obj.rid != null) {
+    var eventObject = this._callbackMap[obj.rid];
+    if (eventObject) {
+      clearTimeout(eventObject.timeout);
+      delete eventObject.timeout;
+      delete this._callbackMap[obj.rid];
+
+      if (eventObject.callback) {
+        var rehydratedError = scErrors.hydrateError(obj.error);
+        eventObject.callback(rehydratedError, obj.data);
+      }
+    }
+  } else {
+    Emitter.prototype.emit.call(this, 'event', 'raw', message);
   }
 };
 
@@ -1491,26 +1559,13 @@ SCTransport.prototype._onMessage = function (message) {
       this.sendObject('#2');
     }
   } else {
-    var event = obj.event;
-
-    if (event) {
-      var response = new Response(this, obj.cid);
-      Emitter.prototype.emit.call(this, 'event', event, obj.data, response);
-    } else if (obj.rid != null) {
-
-      var eventObject = this._callbackMap[obj.rid];
-      if (eventObject) {
-        clearTimeout(eventObject.timeout);
-        delete eventObject.timeout;
-        delete this._callbackMap[obj.rid];
-
-        if (eventObject.callback) {
-          var rehydratedError = scErrors.hydrateError(obj.error);
-          eventObject.callback(rehydratedError, obj.data);
-        }
+    if (Array.isArray(obj)) {
+      var len = obj.length;
+      for (var i = 0; i < len; i++) {
+        this._handleEventObject(obj[i], message);
       }
     } else {
-      Emitter.prototype.emit.call(this, 'event', 'raw', obj);
+      this._handleEventObject(obj, message);
     }
   }
 };
@@ -1520,6 +1575,9 @@ SCTransport.prototype._onError = function (err) {
 };
 
 SCTransport.prototype._resetPingTimeout = function () {
+  if (this.pingTimeoutDisabled) {
+    return;
+  }
   var self = this;
 
   var now = (new Date()).getTime();
@@ -1554,7 +1612,7 @@ SCTransport.prototype.close = function (code, data) {
   }
 };
 
-SCTransport.prototype.emitObject = function (eventObject) {
+SCTransport.prototype.emitObject = function (eventObject, options) {
   var simpleEventObject = {
     event: eventObject.event,
     data: eventObject.data
@@ -1565,12 +1623,12 @@ SCTransport.prototype.emitObject = function (eventObject) {
     this._callbackMap[eventObject.cid] = eventObject;
   }
 
-  this.sendObject(simpleEventObject);
+  this.sendObject(simpleEventObject, options);
+
   return eventObject.cid || null;
 };
 
 SCTransport.prototype._handleEventAckTimeout = function (eventObject) {
-
   if (eventObject.cid) {
     delete this._callbackMap[eventObject.cid];
   }
@@ -1616,7 +1674,7 @@ SCTransport.prototype.emit = function (event, data, a, b) {
 
   var cid = null;
   if (this.state == this.OPEN || options.force) {
-    cid = this.emitObject(eventObject);
+    cid = this.emitObject(eventObject, options);
   }
   return cid;
 };
@@ -1655,17 +1713,45 @@ SCTransport.prototype.serializeObject = function (object) {
   return null;
 };
 
-SCTransport.prototype.sendObject = function (object) {
+SCTransport.prototype.sendObjectBatch = function (object) {
+  var self = this;
+
+  this._batchSendList.push(object);
+  if (this._batchTimeout) {
+    return;
+  }
+
+  this._batchTimeout = setTimeout(function () {
+    delete self._batchTimeout;
+    if (self._batchSendList.length) {
+      var str = self.serializeObject(self._batchSendList);
+      if (str != null) {
+        self.send(str);
+      }
+      self._batchSendList = [];
+    }
+  }, this.options.pubSubBatchDuration || 0);
+};
+
+SCTransport.prototype.sendObjectSingle = function (object) {
   var str = this.serializeObject(object);
   if (str != null) {
     this.send(str);
   }
 };
 
+SCTransport.prototype.sendObject = function (object, options) {
+  if (options && options.batch) {
+    this.sendObjectBatch(object);
+  } else {
+    this.sendObjectSingle(object);
+  }
+};
+
 module.exports.SCTransport = SCTransport;
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./response":3,"component-emitter":12,"querystring":19,"sc-errors":22,"ws":7}],7:[function(require,module,exports){
+},{"./response":4,"component-emitter":12,"querystring":18,"sc-errors":21,"ws":7}],7:[function(_dereq_,module,exports){
 var global;
 if (typeof WorkerGlobalScope !== 'undefined') {
   global = self;
@@ -1702,7 +1788,7 @@ if (WebSocket) ws.prototype = WebSocket.prototype;
 
 module.exports = WebSocket ? ws : null;
 
-},{}],8:[function(require,module,exports){
+},{}],8:[function(_dereq_,module,exports){
 (function (global){
 /*! http://mths.be/base64 v0.1.0 by @mathias | MIT license */
 ;(function(root) {
@@ -1871,7 +1957,7 @@ module.exports = WebSocket ? ws : null;
 }(this));
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],9:[function(require,module,exports){
+},{}],9:[function(_dereq_,module,exports){
 'use strict'
 
 exports.byteLength = byteLength
@@ -1888,6 +1974,8 @@ for (var i = 0, len = code.length; i < len; ++i) {
   revLookup[code.charCodeAt(i)] = i
 }
 
+// Support decoding URL-safe base64 strings, as Node.js does.
+// See: https://en.wikipedia.org/wiki/Base64#URL_applications
 revLookup['-'.charCodeAt(0)] = 62
 revLookup['_'.charCodeAt(0)] = 63
 
@@ -1949,7 +2037,7 @@ function encodeChunk (uint8, start, end) {
   var tmp
   var output = []
   for (var i = start; i < end; i += 3) {
-    tmp = (uint8[i] << 16) + (uint8[i + 1] << 8) + (uint8[i + 2])
+    tmp = ((uint8[i] << 16) & 0xFF0000) + ((uint8[i + 1] << 8) & 0xFF00) + (uint8[i + 2] & 0xFF)
     output.push(tripletToBase64(tmp))
   }
   return output.join('')
@@ -1987,94 +2075,88 @@ function fromByteArray (uint8) {
   return parts.join('')
 }
 
-},{}],10:[function(require,module,exports){
-(function (global){
+},{}],10:[function(_dereq_,module,exports){
 /*!
  * The buffer module from node.js, for the browser.
  *
- * @author   Feross Aboukhadijeh <feross@feross.org> <http://feross.org>
+ * @author   Feross Aboukhadijeh <https://feross.org>
  * @license  MIT
  */
 /* eslint-disable no-proto */
 
 'use strict'
 
-var base64 = require('base64-js')
-var ieee754 = require('ieee754')
-var isArray = require('isarray')
+var base64 = _dereq_('base64-js')
+var ieee754 = _dereq_('ieee754')
 
 exports.Buffer = Buffer
 exports.SlowBuffer = SlowBuffer
 exports.INSPECT_MAX_BYTES = 50
 
+var K_MAX_LENGTH = 0x7fffffff
+exports.kMaxLength = K_MAX_LENGTH
+
 /**
  * If `Buffer.TYPED_ARRAY_SUPPORT`:
  *   === true    Use Uint8Array implementation (fastest)
- *   === false   Use Object implementation (most compatible, even IE6)
+ *   === false   Print warning and recommend using `buffer` v4.x which has an Object
+ *               implementation (most compatible, even IE6)
  *
  * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
  * Opera 11.6+, iOS 4.2+.
  *
- * Due to various browser bugs, sometimes the Object implementation will be used even
- * when the browser supports typed arrays.
- *
- * Note:
- *
- *   - Firefox 4-29 lacks support for adding new properties to `Uint8Array` instances,
- *     See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438.
- *
- *   - Chrome 9-10 is missing the `TypedArray.prototype.subarray` function.
- *
- *   - IE10 has a broken `TypedArray.prototype.subarray` function which returns arrays of
- *     incorrect length in some situations.
-
- * We detect these buggy browsers and set `Buffer.TYPED_ARRAY_SUPPORT` to `false` so they
- * get the Object implementation, which is slower but behaves correctly.
+ * We report that the browser does not support typed arrays if the are not subclassable
+ * using __proto__. Firefox 4-29 lacks support for adding new properties to `Uint8Array`
+ * (See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438). IE 10 lacks support
+ * for __proto__ and has a buggy typed array implementation.
  */
-Buffer.TYPED_ARRAY_SUPPORT = global.TYPED_ARRAY_SUPPORT !== undefined
-  ? global.TYPED_ARRAY_SUPPORT
-  : typedArraySupport()
+Buffer.TYPED_ARRAY_SUPPORT = typedArraySupport()
 
-/*
- * Export kMaxLength after typed array support is determined.
- */
-exports.kMaxLength = kMaxLength()
+if (!Buffer.TYPED_ARRAY_SUPPORT && typeof console !== 'undefined' &&
+    typeof console.error === 'function') {
+  console.error(
+    'This browser lacks typed array (Uint8Array) support which is required by ' +
+    '`buffer` v5.x. Use `buffer` v4.x if you require old browser support.'
+  )
+}
 
 function typedArraySupport () {
+  // Can typed array instances can be augmented?
   try {
     var arr = new Uint8Array(1)
     arr.__proto__ = {__proto__: Uint8Array.prototype, foo: function () { return 42 }}
-    return arr.foo() === 42 && // typed array instances can be augmented
-        typeof arr.subarray === 'function' && // chrome 9-10 lack `subarray`
-        arr.subarray(1, 1).byteLength === 0 // ie10 has broken `subarray`
+    return arr.foo() === 42
   } catch (e) {
     return false
   }
 }
 
-function kMaxLength () {
-  return Buffer.TYPED_ARRAY_SUPPORT
-    ? 0x7fffffff
-    : 0x3fffffff
-}
+Object.defineProperty(Buffer.prototype, 'parent', {
+  get: function () {
+    if (!(this instanceof Buffer)) {
+      return undefined
+    }
+    return this.buffer
+  }
+})
 
-function createBuffer (that, length) {
-  if (kMaxLength() < length) {
+Object.defineProperty(Buffer.prototype, 'offset', {
+  get: function () {
+    if (!(this instanceof Buffer)) {
+      return undefined
+    }
+    return this.byteOffset
+  }
+})
+
+function createBuffer (length) {
+  if (length > K_MAX_LENGTH) {
     throw new RangeError('Invalid typed array length')
   }
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    // Return an augmented `Uint8Array` instance, for best performance
-    that = new Uint8Array(length)
-    that.__proto__ = Buffer.prototype
-  } else {
-    // Fallback: Return an object instance of the Buffer class
-    if (that === null) {
-      that = new Buffer(length)
-    }
-    that.length = length
-  }
-
-  return that
+  // Return an augmented `Uint8Array` instance
+  var buf = new Uint8Array(length)
+  buf.__proto__ = Buffer.prototype
+  return buf
 }
 
 /**
@@ -2088,10 +2170,6 @@ function createBuffer (that, length) {
  */
 
 function Buffer (arg, encodingOrOffset, length) {
-  if (!Buffer.TYPED_ARRAY_SUPPORT && !(this instanceof Buffer)) {
-    return new Buffer(arg, encodingOrOffset, length)
-  }
-
   // Common case.
   if (typeof arg === 'number') {
     if (typeof encodingOrOffset === 'string') {
@@ -2099,33 +2177,38 @@ function Buffer (arg, encodingOrOffset, length) {
         'If encoding is specified then the first argument must be a string'
       )
     }
-    return allocUnsafe(this, arg)
+    return allocUnsafe(arg)
   }
-  return from(this, arg, encodingOrOffset, length)
+  return from(arg, encodingOrOffset, length)
+}
+
+// Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
+if (typeof Symbol !== 'undefined' && Symbol.species &&
+    Buffer[Symbol.species] === Buffer) {
+  Object.defineProperty(Buffer, Symbol.species, {
+    value: null,
+    configurable: true,
+    enumerable: false,
+    writable: false
+  })
 }
 
 Buffer.poolSize = 8192 // not used by this implementation
 
-// TODO: Legacy, not needed anymore. Remove in next major version.
-Buffer._augment = function (arr) {
-  arr.__proto__ = Buffer.prototype
-  return arr
-}
-
-function from (that, value, encodingOrOffset, length) {
+function from (value, encodingOrOffset, length) {
   if (typeof value === 'number') {
     throw new TypeError('"value" argument must not be a number')
   }
 
-  if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) {
-    return fromArrayBuffer(that, value, encodingOrOffset, length)
+  if (isArrayBuffer(value) || (value && isArrayBuffer(value.buffer))) {
+    return fromArrayBuffer(value, encodingOrOffset, length)
   }
 
   if (typeof value === 'string') {
-    return fromString(that, value, encodingOrOffset)
+    return fromString(value, encodingOrOffset)
   }
 
-  return fromObject(that, value)
+  return fromObject(value)
 }
 
 /**
@@ -2137,44 +2220,36 @@ function from (that, value, encodingOrOffset, length) {
  * Buffer.from(arrayBuffer[, byteOffset[, length]])
  **/
 Buffer.from = function (value, encodingOrOffset, length) {
-  return from(null, value, encodingOrOffset, length)
+  return from(value, encodingOrOffset, length)
 }
 
-if (Buffer.TYPED_ARRAY_SUPPORT) {
-  Buffer.prototype.__proto__ = Uint8Array.prototype
-  Buffer.__proto__ = Uint8Array
-  if (typeof Symbol !== 'undefined' && Symbol.species &&
-      Buffer[Symbol.species] === Buffer) {
-    // Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
-    Object.defineProperty(Buffer, Symbol.species, {
-      value: null,
-      configurable: true
-    })
-  }
-}
+// Note: Change prototype *after* Buffer.from is defined to workaround Chrome bug:
+// https://github.com/feross/buffer/pull/148
+Buffer.prototype.__proto__ = Uint8Array.prototype
+Buffer.__proto__ = Uint8Array
 
 function assertSize (size) {
   if (typeof size !== 'number') {
-    throw new TypeError('"size" argument must be a number')
+    throw new TypeError('"size" argument must be of type number')
   } else if (size < 0) {
     throw new RangeError('"size" argument must not be negative')
   }
 }
 
-function alloc (that, size, fill, encoding) {
+function alloc (size, fill, encoding) {
   assertSize(size)
   if (size <= 0) {
-    return createBuffer(that, size)
+    return createBuffer(size)
   }
   if (fill !== undefined) {
     // Only pay attention to encoding if it's a string. This
     // prevents accidentally sending in a number that would
     // be interpretted as a start offset.
     return typeof encoding === 'string'
-      ? createBuffer(that, size).fill(fill, encoding)
-      : createBuffer(that, size).fill(fill)
+      ? createBuffer(size).fill(fill, encoding)
+      : createBuffer(size).fill(fill)
   }
-  return createBuffer(that, size)
+  return createBuffer(size)
 }
 
 /**
@@ -2182,132 +2257,118 @@ function alloc (that, size, fill, encoding) {
  * alloc(size[, fill[, encoding]])
  **/
 Buffer.alloc = function (size, fill, encoding) {
-  return alloc(null, size, fill, encoding)
+  return alloc(size, fill, encoding)
 }
 
-function allocUnsafe (that, size) {
+function allocUnsafe (size) {
   assertSize(size)
-  that = createBuffer(that, size < 0 ? 0 : checked(size) | 0)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) {
-    for (var i = 0; i < size; ++i) {
-      that[i] = 0
-    }
-  }
-  return that
+  return createBuffer(size < 0 ? 0 : checked(size) | 0)
 }
 
 /**
  * Equivalent to Buffer(num), by default creates a non-zero-filled Buffer instance.
  * */
 Buffer.allocUnsafe = function (size) {
-  return allocUnsafe(null, size)
+  return allocUnsafe(size)
 }
 /**
  * Equivalent to SlowBuffer(num), by default creates a non-zero-filled Buffer instance.
  */
 Buffer.allocUnsafeSlow = function (size) {
-  return allocUnsafe(null, size)
+  return allocUnsafe(size)
 }
 
-function fromString (that, string, encoding) {
+function fromString (string, encoding) {
   if (typeof encoding !== 'string' || encoding === '') {
     encoding = 'utf8'
   }
 
   if (!Buffer.isEncoding(encoding)) {
-    throw new TypeError('"encoding" must be a valid string encoding')
+    throw new TypeError('Unknown encoding: ' + encoding)
   }
 
   var length = byteLength(string, encoding) | 0
-  that = createBuffer(that, length)
+  var buf = createBuffer(length)
 
-  var actual = that.write(string, encoding)
+  var actual = buf.write(string, encoding)
 
   if (actual !== length) {
     // Writing a hex string, for example, that contains invalid characters will
     // cause everything after the first invalid character to be ignored. (e.g.
     // 'abxxcd' will be treated as 'ab')
-    that = that.slice(0, actual)
+    buf = buf.slice(0, actual)
   }
 
-  return that
+  return buf
 }
 
-function fromArrayLike (that, array) {
+function fromArrayLike (array) {
   var length = array.length < 0 ? 0 : checked(array.length) | 0
-  that = createBuffer(that, length)
+  var buf = createBuffer(length)
   for (var i = 0; i < length; i += 1) {
-    that[i] = array[i] & 255
+    buf[i] = array[i] & 255
   }
-  return that
+  return buf
 }
 
-function fromArrayBuffer (that, array, byteOffset, length) {
-  array.byteLength // this throws if `array` is not a valid ArrayBuffer
-
+function fromArrayBuffer (array, byteOffset, length) {
   if (byteOffset < 0 || array.byteLength < byteOffset) {
-    throw new RangeError('\'offset\' is out of bounds')
+    throw new RangeError('"offset" is outside of buffer bounds')
   }
 
   if (array.byteLength < byteOffset + (length || 0)) {
-    throw new RangeError('\'length\' is out of bounds')
+    throw new RangeError('"length" is outside of buffer bounds')
   }
 
+  var buf
   if (byteOffset === undefined && length === undefined) {
-    array = new Uint8Array(array)
+    buf = new Uint8Array(array)
   } else if (length === undefined) {
-    array = new Uint8Array(array, byteOffset)
+    buf = new Uint8Array(array, byteOffset)
   } else {
-    array = new Uint8Array(array, byteOffset, length)
+    buf = new Uint8Array(array, byteOffset, length)
   }
 
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    // Return an augmented `Uint8Array` instance, for best performance
-    that = array
-    that.__proto__ = Buffer.prototype
-  } else {
-    // Fallback: Return an object instance of the Buffer class
-    that = fromArrayLike(that, array)
-  }
-  return that
+  // Return an augmented `Uint8Array` instance
+  buf.__proto__ = Buffer.prototype
+  return buf
 }
 
-function fromObject (that, obj) {
+function fromObject (obj) {
   if (Buffer.isBuffer(obj)) {
     var len = checked(obj.length) | 0
-    that = createBuffer(that, len)
+    var buf = createBuffer(len)
 
-    if (that.length === 0) {
-      return that
+    if (buf.length === 0) {
+      return buf
     }
 
-    obj.copy(that, 0, 0, len)
-    return that
+    obj.copy(buf, 0, 0, len)
+    return buf
   }
 
   if (obj) {
-    if ((typeof ArrayBuffer !== 'undefined' &&
-        obj.buffer instanceof ArrayBuffer) || 'length' in obj) {
-      if (typeof obj.length !== 'number' || isnan(obj.length)) {
-        return createBuffer(that, 0)
+    if (ArrayBuffer.isView(obj) || 'length' in obj) {
+      if (typeof obj.length !== 'number' || numberIsNaN(obj.length)) {
+        return createBuffer(0)
       }
-      return fromArrayLike(that, obj)
+      return fromArrayLike(obj)
     }
 
-    if (obj.type === 'Buffer' && isArray(obj.data)) {
-      return fromArrayLike(that, obj.data)
+    if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+      return fromArrayLike(obj.data)
     }
   }
 
-  throw new TypeError('First argument must be a string, Buffer, ArrayBuffer, Array, or array-like object.')
+  throw new TypeError('The first argument must be one of type string, Buffer, ArrayBuffer, Array, or Array-like Object.')
 }
 
 function checked (length) {
-  // Note: cannot use `length < kMaxLength()` here because that fails when
+  // Note: cannot use `length < K_MAX_LENGTH` here because that fails when
   // length is NaN (which is otherwise coerced to zero.)
-  if (length >= kMaxLength()) {
+  if (length >= K_MAX_LENGTH) {
     throw new RangeError('Attempt to allocate Buffer larger than maximum ' +
-                         'size: 0x' + kMaxLength().toString(16) + ' bytes')
+                         'size: 0x' + K_MAX_LENGTH.toString(16) + ' bytes')
   }
   return length | 0
 }
@@ -2320,7 +2381,7 @@ function SlowBuffer (length) {
 }
 
 Buffer.isBuffer = function isBuffer (b) {
-  return !!(b != null && b._isBuffer)
+  return b != null && b._isBuffer === true
 }
 
 Buffer.compare = function compare (a, b) {
@@ -2366,7 +2427,7 @@ Buffer.isEncoding = function isEncoding (encoding) {
 }
 
 Buffer.concat = function concat (list, length) {
-  if (!isArray(list)) {
+  if (!Array.isArray(list)) {
     throw new TypeError('"list" argument must be an Array of Buffers')
   }
 
@@ -2386,6 +2447,9 @@ Buffer.concat = function concat (list, length) {
   var pos = 0
   for (i = 0; i < list.length; ++i) {
     var buf = list[i]
+    if (ArrayBuffer.isView(buf)) {
+      buf = Buffer.from(buf)
+    }
     if (!Buffer.isBuffer(buf)) {
       throw new TypeError('"list" argument must be an Array of Buffers')
     }
@@ -2399,8 +2463,7 @@ function byteLength (string, encoding) {
   if (Buffer.isBuffer(string)) {
     return string.length
   }
-  if (typeof ArrayBuffer !== 'undefined' && typeof ArrayBuffer.isView === 'function' &&
-      (ArrayBuffer.isView(string) || string instanceof ArrayBuffer)) {
+  if (ArrayBuffer.isView(string) || isArrayBuffer(string)) {
     return string.byteLength
   }
   if (typeof string !== 'string') {
@@ -2510,8 +2573,12 @@ function slowToString (encoding, start, end) {
   }
 }
 
-// The property is used by `Buffer.isBuffer` and `is-buffer` (in Safari 5-7) to detect
-// Buffer instances.
+// This property is used by `Buffer.isBuffer` (and the `is-buffer` npm package)
+// to detect a Buffer instance. It's not possible to use `instanceof Buffer`
+// reliably in a browserify context because there could be multiple different
+// copies of the 'buffer' package in use. This method works even for Buffer
+// instances that were created from another copy of the `buffer` package.
+// See: https://github.com/feross/buffer/issues/154
 Buffer.prototype._isBuffer = true
 
 function swap (b, n, m) {
@@ -2558,11 +2625,13 @@ Buffer.prototype.swap64 = function swap64 () {
 }
 
 Buffer.prototype.toString = function toString () {
-  var length = this.length | 0
+  var length = this.length
   if (length === 0) return ''
   if (arguments.length === 0) return utf8Slice(this, 0, length)
   return slowToString.apply(this, arguments)
 }
+
+Buffer.prototype.toLocaleString = Buffer.prototype.toString
 
 Buffer.prototype.equals = function equals (b) {
   if (!Buffer.isBuffer(b)) throw new TypeError('Argument must be a Buffer')
@@ -2662,7 +2731,7 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
     byteOffset = -0x80000000
   }
   byteOffset = +byteOffset  // Coerce to Number.
-  if (isNaN(byteOffset)) {
+  if (numberIsNaN(byteOffset)) {
     // byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer
     byteOffset = dir ? 0 : (buffer.length - 1)
   }
@@ -2691,8 +2760,7 @@ function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
     return arrayIndexOf(buffer, val, byteOffset, encoding, dir)
   } else if (typeof val === 'number') {
     val = val & 0xFF // Search for a byte value [0-255]
-    if (Buffer.TYPED_ARRAY_SUPPORT &&
-        typeof Uint8Array.prototype.indexOf === 'function') {
+    if (typeof Uint8Array.prototype.indexOf === 'function') {
       if (dir) {
         return Uint8Array.prototype.indexOf.call(buffer, val, byteOffset)
       } else {
@@ -2785,16 +2853,14 @@ function hexWrite (buf, string, offset, length) {
     }
   }
 
-  // must be an even number of digits
   var strLen = string.length
-  if (strLen % 2 !== 0) throw new TypeError('Invalid hex string')
 
   if (length > strLen / 2) {
     length = strLen / 2
   }
   for (var i = 0; i < length; ++i) {
     var parsed = parseInt(string.substr(i * 2, 2), 16)
-    if (isNaN(parsed)) return i
+    if (numberIsNaN(parsed)) return i
     buf[offset + i] = parsed
   }
   return i
@@ -2833,15 +2899,14 @@ Buffer.prototype.write = function write (string, offset, length, encoding) {
     offset = 0
   // Buffer#write(string, offset[, length][, encoding])
   } else if (isFinite(offset)) {
-    offset = offset | 0
+    offset = offset >>> 0
     if (isFinite(length)) {
-      length = length | 0
+      length = length >>> 0
       if (encoding === undefined) encoding = 'utf8'
     } else {
       encoding = length
       length = undefined
     }
-  // legacy write(string, encoding, offset, length) - remove in v0.13
   } else {
     throw new Error(
       'Buffer.write(string, encoding, offset[, length]) is no longer supported'
@@ -3040,7 +3105,7 @@ function utf16leSlice (buf, start, end) {
   var bytes = buf.slice(start, end)
   var res = ''
   for (var i = 0; i < bytes.length; i += 2) {
-    res += String.fromCharCode(bytes[i] + bytes[i + 1] * 256)
+    res += String.fromCharCode(bytes[i] + (bytes[i + 1] * 256))
   }
   return res
 }
@@ -3066,18 +3131,9 @@ Buffer.prototype.slice = function slice (start, end) {
 
   if (end < start) end = start
 
-  var newBuf
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    newBuf = this.subarray(start, end)
-    newBuf.__proto__ = Buffer.prototype
-  } else {
-    var sliceLen = end - start
-    newBuf = new Buffer(sliceLen, undefined)
-    for (var i = 0; i < sliceLen; ++i) {
-      newBuf[i] = this[i + start]
-    }
-  }
-
+  var newBuf = this.subarray(start, end)
+  // Return an augmented `Uint8Array` instance
+  newBuf.__proto__ = Buffer.prototype
   return newBuf
 }
 
@@ -3090,8 +3146,8 @@ function checkOffset (offset, ext, length) {
 }
 
 Buffer.prototype.readUIntLE = function readUIntLE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var val = this[offset]
@@ -3105,8 +3161,8 @@ Buffer.prototype.readUIntLE = function readUIntLE (offset, byteLength, noAssert)
 }
 
 Buffer.prototype.readUIntBE = function readUIntBE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     checkOffset(offset, byteLength, this.length)
   }
@@ -3121,21 +3177,25 @@ Buffer.prototype.readUIntBE = function readUIntBE (offset, byteLength, noAssert)
 }
 
 Buffer.prototype.readUInt8 = function readUInt8 (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 1, this.length)
   return this[offset]
 }
 
 Buffer.prototype.readUInt16LE = function readUInt16LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   return this[offset] | (this[offset + 1] << 8)
 }
 
 Buffer.prototype.readUInt16BE = function readUInt16BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   return (this[offset] << 8) | this[offset + 1]
 }
 
 Buffer.prototype.readUInt32LE = function readUInt32LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return ((this[offset]) |
@@ -3145,6 +3205,7 @@ Buffer.prototype.readUInt32LE = function readUInt32LE (offset, noAssert) {
 }
 
 Buffer.prototype.readUInt32BE = function readUInt32BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset] * 0x1000000) +
@@ -3154,8 +3215,8 @@ Buffer.prototype.readUInt32BE = function readUInt32BE (offset, noAssert) {
 }
 
 Buffer.prototype.readIntLE = function readIntLE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var val = this[offset]
@@ -3172,8 +3233,8 @@ Buffer.prototype.readIntLE = function readIntLE (offset, byteLength, noAssert) {
 }
 
 Buffer.prototype.readIntBE = function readIntBE (offset, byteLength, noAssert) {
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) checkOffset(offset, byteLength, this.length)
 
   var i = byteLength
@@ -3190,24 +3251,28 @@ Buffer.prototype.readIntBE = function readIntBE (offset, byteLength, noAssert) {
 }
 
 Buffer.prototype.readInt8 = function readInt8 (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 1, this.length)
   if (!(this[offset] & 0x80)) return (this[offset])
   return ((0xff - this[offset] + 1) * -1)
 }
 
 Buffer.prototype.readInt16LE = function readInt16LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   var val = this[offset] | (this[offset + 1] << 8)
   return (val & 0x8000) ? val | 0xFFFF0000 : val
 }
 
 Buffer.prototype.readInt16BE = function readInt16BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 2, this.length)
   var val = this[offset + 1] | (this[offset] << 8)
   return (val & 0x8000) ? val | 0xFFFF0000 : val
 }
 
 Buffer.prototype.readInt32LE = function readInt32LE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset]) |
@@ -3217,6 +3282,7 @@ Buffer.prototype.readInt32LE = function readInt32LE (offset, noAssert) {
 }
 
 Buffer.prototype.readInt32BE = function readInt32BE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
 
   return (this[offset] << 24) |
@@ -3226,21 +3292,25 @@ Buffer.prototype.readInt32BE = function readInt32BE (offset, noAssert) {
 }
 
 Buffer.prototype.readFloatLE = function readFloatLE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
   return ieee754.read(this, offset, true, 23, 4)
 }
 
 Buffer.prototype.readFloatBE = function readFloatBE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 4, this.length)
   return ieee754.read(this, offset, false, 23, 4)
 }
 
 Buffer.prototype.readDoubleLE = function readDoubleLE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 8, this.length)
   return ieee754.read(this, offset, true, 52, 8)
 }
 
 Buffer.prototype.readDoubleBE = function readDoubleBE (offset, noAssert) {
+  offset = offset >>> 0
   if (!noAssert) checkOffset(offset, 8, this.length)
   return ieee754.read(this, offset, false, 52, 8)
 }
@@ -3253,8 +3323,8 @@ function checkInt (buf, value, offset, ext, max, min) {
 
 Buffer.prototype.writeUIntLE = function writeUIntLE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     var maxBytes = Math.pow(2, 8 * byteLength) - 1
     checkInt(this, value, offset, byteLength, maxBytes, 0)
@@ -3272,8 +3342,8 @@ Buffer.prototype.writeUIntLE = function writeUIntLE (value, offset, byteLength, 
 
 Buffer.prototype.writeUIntBE = function writeUIntBE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
-  byteLength = byteLength | 0
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
   if (!noAssert) {
     var maxBytes = Math.pow(2, 8 * byteLength) - 1
     checkInt(this, value, offset, byteLength, maxBytes, 0)
@@ -3291,89 +3361,57 @@ Buffer.prototype.writeUIntBE = function writeUIntBE (value, offset, byteLength, 
 
 Buffer.prototype.writeUInt8 = function writeUInt8 (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 1, 0xff, 0)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) value = Math.floor(value)
   this[offset] = (value & 0xff)
   return offset + 1
 }
 
-function objectWriteUInt16 (buf, value, offset, littleEndian) {
-  if (value < 0) value = 0xffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 2); i < j; ++i) {
-    buf[offset + i] = (value & (0xff << (8 * (littleEndian ? i : 1 - i)))) >>>
-      (littleEndian ? i : 1 - i) * 8
-  }
-}
-
 Buffer.prototype.writeUInt16LE = function writeUInt16LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-  } else {
-    objectWriteUInt16(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
   return offset + 2
 }
 
 Buffer.prototype.writeUInt16BE = function writeUInt16BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 8)
-    this[offset + 1] = (value & 0xff)
-  } else {
-    objectWriteUInt16(this, value, offset, false)
-  }
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
   return offset + 2
-}
-
-function objectWriteUInt32 (buf, value, offset, littleEndian) {
-  if (value < 0) value = 0xffffffff + value + 1
-  for (var i = 0, j = Math.min(buf.length - offset, 4); i < j; ++i) {
-    buf[offset + i] = (value >>> (littleEndian ? i : 3 - i) * 8) & 0xff
-  }
 }
 
 Buffer.prototype.writeUInt32LE = function writeUInt32LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset + 3] = (value >>> 24)
-    this[offset + 2] = (value >>> 16)
-    this[offset + 1] = (value >>> 8)
-    this[offset] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, true)
-  }
+  this[offset + 3] = (value >>> 24)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 1] = (value >>> 8)
+  this[offset] = (value & 0xff)
   return offset + 4
 }
 
 Buffer.prototype.writeUInt32BE = function writeUInt32BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 24)
-    this[offset + 1] = (value >>> 16)
-    this[offset + 2] = (value >>> 8)
-    this[offset + 3] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, false)
-  }
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
   return offset + 4
 }
 
 Buffer.prototype.writeIntLE = function writeIntLE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) {
-    var limit = Math.pow(2, 8 * byteLength - 1)
+    var limit = Math.pow(2, (8 * byteLength) - 1)
 
     checkInt(this, value, offset, byteLength, limit - 1, -limit)
   }
@@ -3394,9 +3432,9 @@ Buffer.prototype.writeIntLE = function writeIntLE (value, offset, byteLength, no
 
 Buffer.prototype.writeIntBE = function writeIntBE (value, offset, byteLength, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) {
-    var limit = Math.pow(2, 8 * byteLength - 1)
+    var limit = Math.pow(2, (8 * byteLength) - 1)
 
     checkInt(this, value, offset, byteLength, limit - 1, -limit)
   }
@@ -3417,9 +3455,8 @@ Buffer.prototype.writeIntBE = function writeIntBE (value, offset, byteLength, no
 
 Buffer.prototype.writeInt8 = function writeInt8 (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 1, 0x7f, -0x80)
-  if (!Buffer.TYPED_ARRAY_SUPPORT) value = Math.floor(value)
   if (value < 0) value = 0xff + value + 1
   this[offset] = (value & 0xff)
   return offset + 1
@@ -3427,58 +3464,42 @@ Buffer.prototype.writeInt8 = function writeInt8 (value, offset, noAssert) {
 
 Buffer.prototype.writeInt16LE = function writeInt16LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-  } else {
-    objectWriteUInt16(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
   return offset + 2
 }
 
 Buffer.prototype.writeInt16BE = function writeInt16BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 8)
-    this[offset + 1] = (value & 0xff)
-  } else {
-    objectWriteUInt16(this, value, offset, false)
-  }
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
   return offset + 2
 }
 
 Buffer.prototype.writeInt32LE = function writeInt32LE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value & 0xff)
-    this[offset + 1] = (value >>> 8)
-    this[offset + 2] = (value >>> 16)
-    this[offset + 3] = (value >>> 24)
-  } else {
-    objectWriteUInt32(this, value, offset, true)
-  }
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 3] = (value >>> 24)
   return offset + 4
 }
 
 Buffer.prototype.writeInt32BE = function writeInt32BE (value, offset, noAssert) {
   value = +value
-  offset = offset | 0
+  offset = offset >>> 0
   if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
   if (value < 0) value = 0xffffffff + value + 1
-  if (Buffer.TYPED_ARRAY_SUPPORT) {
-    this[offset] = (value >>> 24)
-    this[offset + 1] = (value >>> 16)
-    this[offset + 2] = (value >>> 8)
-    this[offset + 3] = (value & 0xff)
-  } else {
-    objectWriteUInt32(this, value, offset, false)
-  }
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
   return offset + 4
 }
 
@@ -3488,6 +3509,8 @@ function checkIEEE754 (buf, value, offset, ext, max, min) {
 }
 
 function writeFloat (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
   if (!noAssert) {
     checkIEEE754(buf, value, offset, 4, 3.4028234663852886e+38, -3.4028234663852886e+38)
   }
@@ -3504,6 +3527,8 @@ Buffer.prototype.writeFloatBE = function writeFloatBE (value, offset, noAssert) 
 }
 
 function writeDouble (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
   if (!noAssert) {
     checkIEEE754(buf, value, offset, 8, 1.7976931348623157E+308, -1.7976931348623157E+308)
   }
@@ -3521,6 +3546,7 @@ Buffer.prototype.writeDoubleBE = function writeDoubleBE (value, offset, noAssert
 
 // copy(targetBuffer, targetStart=0, sourceStart=0, sourceEnd=buffer.length)
 Buffer.prototype.copy = function copy (target, targetStart, start, end) {
+  if (!Buffer.isBuffer(target)) throw new TypeError('argument should be a Buffer')
   if (!start) start = 0
   if (!end && end !== 0) end = this.length
   if (targetStart >= target.length) targetStart = target.length
@@ -3535,7 +3561,7 @@ Buffer.prototype.copy = function copy (target, targetStart, start, end) {
   if (targetStart < 0) {
     throw new RangeError('targetStart out of bounds')
   }
-  if (start < 0 || start >= this.length) throw new RangeError('sourceStart out of bounds')
+  if (start < 0 || start >= this.length) throw new RangeError('Index out of range')
   if (end < 0) throw new RangeError('sourceEnd out of bounds')
 
   // Are we oob?
@@ -3545,22 +3571,19 @@ Buffer.prototype.copy = function copy (target, targetStart, start, end) {
   }
 
   var len = end - start
-  var i
 
-  if (this === target && start < targetStart && targetStart < end) {
+  if (this === target && typeof Uint8Array.prototype.copyWithin === 'function') {
+    // Use built-in when available, missing from IE11
+    this.copyWithin(targetStart, start, end)
+  } else if (this === target && start < targetStart && targetStart < end) {
     // descending copy from end
-    for (i = len - 1; i >= 0; --i) {
-      target[i + targetStart] = this[i + start]
-    }
-  } else if (len < 1000 || !Buffer.TYPED_ARRAY_SUPPORT) {
-    // ascending copy from start
-    for (i = 0; i < len; ++i) {
+    for (var i = len - 1; i >= 0; --i) {
       target[i + targetStart] = this[i + start]
     }
   } else {
     Uint8Array.prototype.set.call(
       target,
-      this.subarray(start, start + len),
+      this.subarray(start, end),
       targetStart
     )
   }
@@ -3583,17 +3606,19 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
       encoding = end
       end = this.length
     }
-    if (val.length === 1) {
-      var code = val.charCodeAt(0)
-      if (code < 256) {
-        val = code
-      }
-    }
     if (encoding !== undefined && typeof encoding !== 'string') {
       throw new TypeError('encoding must be a string')
     }
     if (typeof encoding === 'string' && !Buffer.isEncoding(encoding)) {
       throw new TypeError('Unknown encoding: ' + encoding)
+    }
+    if (val.length === 1) {
+      var code = val.charCodeAt(0)
+      if ((encoding === 'utf8' && code < 128) ||
+          encoding === 'latin1') {
+        // Fast path: If `val` fits into a single byte, use that numeric value.
+        val = code
+      }
     }
   } else if (typeof val === 'number') {
     val = val & 255
@@ -3621,8 +3646,12 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
   } else {
     var bytes = Buffer.isBuffer(val)
       ? val
-      : utf8ToBytes(new Buffer(val, encoding).toString())
+      : new Buffer(val, encoding)
     var len = bytes.length
+    if (len === 0) {
+      throw new TypeError('The value "' + val +
+        '" is invalid for argument "value"')
+    }
     for (i = 0; i < end - start; ++i) {
       this[i + start] = bytes[i % len]
     }
@@ -3634,11 +3663,13 @@ Buffer.prototype.fill = function fill (val, start, end, encoding) {
 // HELPER FUNCTIONS
 // ================
 
-var INVALID_BASE64_RE = /[^+\/0-9A-Za-z-_]/g
+var INVALID_BASE64_RE = /[^+/0-9A-Za-z-_]/g
 
 function base64clean (str) {
+  // Node takes equal signs as end of the Base64 encoding
+  str = str.split('=')[0]
   // Node strips out invalid characters like \n and \t from the string, base64-js does not
-  str = stringtrim(str).replace(INVALID_BASE64_RE, '')
+  str = str.trim().replace(INVALID_BASE64_RE, '')
   // Node converts strings with length < 2 to ''
   if (str.length < 2) return ''
   // Node allows for non-padded base64 strings (missing trailing ===), base64-js does not
@@ -3646,11 +3677,6 @@ function base64clean (str) {
     str = str + '='
   }
   return str
-}
-
-function stringtrim (str) {
-  if (str.trim) return str.trim()
-  return str.replace(/^\s+|\s+$/g, '')
 }
 
 function toHex (n) {
@@ -3775,12 +3801,19 @@ function blitBuffer (src, dst, offset, length) {
   return i
 }
 
-function isnan (val) {
-  return val !== val // eslint-disable-line no-self-compare
+// ArrayBuffers from another context (i.e. an iframe) do not pass the `instanceof` check
+// but they should be treated as valid. See: https://github.com/feross/buffer/issues/166
+function isArrayBuffer (obj) {
+  return obj instanceof ArrayBuffer ||
+    (obj != null && obj.constructor != null && obj.constructor.name === 'ArrayBuffer' &&
+      typeof obj.byteLength === 'number')
 }
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"base64-js":9,"ieee754":13,"isarray":14}],11:[function(require,module,exports){
+function numberIsNaN (obj) {
+  return obj !== obj // eslint-disable-line no-self-compare
+}
+
+},{"base64-js":9,"ieee754":13}],11:[function(_dereq_,module,exports){
 (function (Buffer){
 var clone = (function() {
 'use strict';
@@ -4034,8 +4067,8 @@ if (typeof module === 'object' && module.exports) {
   module.exports = clone;
 }
 
-}).call(this,require("buffer").Buffer)
-},{"buffer":10}],12:[function(require,module,exports){
+}).call(this,_dereq_("buffer").Buffer)
+},{"buffer":10}],12:[function(_dereq_,module,exports){
 
 /**
  * Expose `Emitter`.
@@ -4200,10 +4233,10 @@ Emitter.prototype.hasListeners = function(event){
   return !! this.listeners(event).length;
 };
 
-},{}],13:[function(require,module,exports){
+},{}],13:[function(_dereq_,module,exports){
 exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   var e, m
-  var eLen = nBytes * 8 - mLen - 1
+  var eLen = (nBytes * 8) - mLen - 1
   var eMax = (1 << eLen) - 1
   var eBias = eMax >> 1
   var nBits = -7
@@ -4216,12 +4249,12 @@ exports.read = function (buffer, offset, isLE, mLen, nBytes) {
   e = s & ((1 << (-nBits)) - 1)
   s >>= (-nBits)
   nBits += eLen
-  for (; nBits > 0; e = e * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+  for (; nBits > 0; e = (e * 256) + buffer[offset + i], i += d, nBits -= 8) {}
 
   m = e & ((1 << (-nBits)) - 1)
   e >>= (-nBits)
   nBits += mLen
-  for (; nBits > 0; m = m * 256 + buffer[offset + i], i += d, nBits -= 8) {}
+  for (; nBits > 0; m = (m * 256) + buffer[offset + i], i += d, nBits -= 8) {}
 
   if (e === 0) {
     e = 1 - eBias
@@ -4236,7 +4269,7 @@ exports.read = function (buffer, offset, isLE, mLen, nBytes) {
 
 exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   var e, m, c
-  var eLen = nBytes * 8 - mLen - 1
+  var eLen = (nBytes * 8) - mLen - 1
   var eMax = (1 << eLen) - 1
   var eBias = eMax >> 1
   var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
@@ -4269,7 +4302,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
       m = 0
       e = eMax
     } else if (e + eBias >= 1) {
-      m = (value * c - 1) * Math.pow(2, mLen)
+      m = ((value * c) - 1) * Math.pow(2, mLen)
       e = e + eBias
     } else {
       m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
@@ -4286,14 +4319,7 @@ exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
   buffer[offset + i - d] |= s * 128
 }
 
-},{}],14:[function(require,module,exports){
-var toString = {}.toString;
-
-module.exports = Array.isArray || function (arr) {
-  return toString.call(arr) == '[object Array]';
-};
-
-},{}],15:[function(require,module,exports){
+},{}],14:[function(_dereq_,module,exports){
 'use strict';
 
 /**
@@ -4681,12 +4707,12 @@ ListItemPrototype.append = function (item) {
 
 module.exports = List;
 
-},{}],16:[function(require,module,exports){
+},{}],15:[function(_dereq_,module,exports){
 'use strict';
 
-module.exports = require('./_source/linked-list.js');
+module.exports = _dereq_('./_source/linked-list.js');
 
-},{"./_source/linked-list.js":15}],17:[function(require,module,exports){
+},{"./_source/linked-list.js":14}],16:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4772,7 +4798,7 @@ var isArray = Array.isArray || function (xs) {
   return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],18:[function(require,module,exports){
+},{}],17:[function(_dereq_,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -4859,14 +4885,14 @@ var objectKeys = Object.keys || function (obj) {
   return res;
 };
 
-},{}],19:[function(require,module,exports){
+},{}],18:[function(_dereq_,module,exports){
 'use strict';
 
-exports.decode = exports.parse = require('./decode');
-exports.encode = exports.stringify = require('./encode');
+exports.decode = exports.parse = _dereq_('./decode');
+exports.encode = exports.stringify = _dereq_('./encode');
 
-},{"./decode":17,"./encode":18}],20:[function(require,module,exports){
-var Emitter = require('component-emitter');
+},{"./decode":16,"./encode":17}],19:[function(_dereq_,module,exports){
+var Emitter = _dereq_('component-emitter');
 
 var SCChannel = function (name, client, options) {
   var self = this;
@@ -4892,6 +4918,8 @@ SCChannel.prototype.setOptions = function (options) {
     options = {};
   }
   this.waitForAuth = options.waitForAuth || false;
+  this.batch = options.batch || false;
+
   if (options.data !== undefined) {
     this.data = options.data;
   }
@@ -4935,7 +4963,7 @@ SCChannel.prototype.destroy = function () {
 
 module.exports.SCChannel = SCChannel;
 
-},{"component-emitter":12}],21:[function(require,module,exports){
+},{"component-emitter":12}],20:[function(_dereq_,module,exports){
 // Based on https://github.com/dscape/cycle/blob/master/cycle.js
 
 module.exports = function decycle(object) {
@@ -5016,8 +5044,8 @@ module.exports = function decycle(object) {
     }(object, '$'));
 };
 
-},{}],22:[function(require,module,exports){
-var decycle = require('./decycle');
+},{}],21:[function(_dereq_,module,exports){
+var decycle = _dereq_('./decycle');
 
 var isStrict = (function () { return !this; })();
 
@@ -5241,7 +5269,7 @@ function UnknownError(message) {
 UnknownError.prototype = Object.create(Error.prototype);
 
 
-// Expose all error types
+// Expose all error types.
 
 module.exports = {
   AuthTokenExpiredError: AuthTokenExpiredError,
@@ -5282,7 +5310,8 @@ module.exports.socketProtocolErrorStatuses = {
   4004: 'Client failed to save auth token',
   4005: 'Did not receive #handshake from client before timeout',
   4006: 'Failed to bind socket to message broker',
-  4007: 'Client connection establishment timed out'
+  4007: 'Client connection establishment timed out',
+  4008: 'Server rejected handshake from client'
 };
 
 module.exports.socketProtocolIgnoreStatuses = {
@@ -5297,7 +5326,9 @@ var unserializableErrorProperties = {
   domainThrown: 1
 };
 
-module.exports.dehydrateError = function (error, includeStackTrace) {
+// Convert an error into a JSON-compatible type which can later be hydrated
+// back to its *original* form.
+module.exports.dehydrateError = function dehydrateError(error, includeStackTrace) {
   var dehydratedError;
 
   if (error && typeof error == 'object') {
@@ -5321,7 +5352,8 @@ module.exports.dehydrateError = function (error, includeStackTrace) {
   return decycle(dehydratedError);
 };
 
-module.exports.hydrateError = function (error) {
+// Convert a dehydrated error back to its *original* form.
+module.exports.hydrateError = function hydrateError(error) {
   var hydratedError = null;
   if (error != null) {
     if (typeof error == 'object') {
@@ -5340,9 +5372,10 @@ module.exports.hydrateError = function (error) {
 
 module.exports.decycle = decycle;
 
-},{"./decycle":21}],23:[function(require,module,exports){
+},{"./decycle":20}],22:[function(_dereq_,module,exports){
 (function (global){
 var base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var validJSONStartRegex = /^[ \n\r\t]*[{\[]/;
 
 var arrayBufferToBase64 = function (arraybuffer) {
   var bytes = new Uint8Array(arraybuffer);
@@ -5381,7 +5414,7 @@ var binaryToBase64Replacer = function (key, value) {
     // Some versions of Node.js convert Buffers to Objects before they are passed to
     // the replacer function - Because of this, we need to rehydrate Buffers
     // before we can convert them to base64 strings.
-    if (value && value.type == 'Buffer' && value.data instanceof Array) {
+    if (value && value.type === 'Buffer' && Array.isArray(value.data)) {
       var rehydratedBuffer;
       if (global.Buffer.from) {
         rehydratedBuffer = global.Buffer.from(value.data);
@@ -5404,17 +5437,21 @@ module.exports.decode = function (input) {
    return null;
   }
   // Leave ping or pong message as is
-  if (input == '#1' || input == '#2') {
+  if (input === '#1' || input === '#2') {
     return input;
   }
   var message = input.toString();
+
+  // Performance optimization to detect invalid JSON packet sooner.
+  if (!validJSONStartRegex.test(message)) {
+    return message;
+  }
 
   try {
     return JSON.parse(message);
   } catch (err) {}
   return message;
 };
-
 
 // Encode a raw JavaScript object (which is in the SC protocol format) into a format for
 // transfering it over the wire. In this case, we just convert it into a simple JSON string.
@@ -5426,12 +5463,223 @@ module.exports.decode = function (input) {
 // for details about the SC protocol.
 module.exports.encode = function (object) {
   // Leave ping or pong message as is
-  if (object == '#1' || object == '#2') {
+  if (object === '#1' || object === '#2') {
     return object;
   }
   return JSON.stringify(object, binaryToBase64Replacer);
 };
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}]},{},[1])(1)
+},{}],23:[function(_dereq_,module,exports){
+var v1 = _dereq_('./v1');
+var v4 = _dereq_('./v4');
+
+var uuid = v4;
+uuid.v1 = v1;
+uuid.v4 = v4;
+
+module.exports = uuid;
+
+},{"./v1":26,"./v4":27}],24:[function(_dereq_,module,exports){
+/**
+ * Convert array of 16 byte values to UUID string format of the form:
+ * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+ */
+var byteToHex = [];
+for (var i = 0; i < 256; ++i) {
+  byteToHex[i] = (i + 0x100).toString(16).substr(1);
+}
+
+function bytesToUuid(buf, offset) {
+  var i = offset || 0;
+  var bth = byteToHex;
+  return bth[buf[i++]] + bth[buf[i++]] +
+          bth[buf[i++]] + bth[buf[i++]] + '-' +
+          bth[buf[i++]] + bth[buf[i++]] + '-' +
+          bth[buf[i++]] + bth[buf[i++]] + '-' +
+          bth[buf[i++]] + bth[buf[i++]] + '-' +
+          bth[buf[i++]] + bth[buf[i++]] +
+          bth[buf[i++]] + bth[buf[i++]] +
+          bth[buf[i++]] + bth[buf[i++]];
+}
+
+module.exports = bytesToUuid;
+
+},{}],25:[function(_dereq_,module,exports){
+// Unique ID creation requires a high quality random # generator.  In the
+// browser this is a little complicated due to unknown quality of Math.random()
+// and inconsistent support for the `crypto` API.  We do the best we can via
+// feature-detection
+
+// getRandomValues needs to be invoked in a context where "this" is a Crypto implementation.
+var getRandomValues = (typeof(crypto) != 'undefined' && crypto.getRandomValues.bind(crypto)) ||
+                      (typeof(msCrypto) != 'undefined' && msCrypto.getRandomValues.bind(msCrypto));
+if (getRandomValues) {
+  // WHATWG crypto RNG - http://wiki.whatwg.org/wiki/Crypto
+  var rnds8 = new Uint8Array(16); // eslint-disable-line no-undef
+
+  module.exports = function whatwgRNG() {
+    getRandomValues(rnds8);
+    return rnds8;
+  };
+} else {
+  // Math.random()-based (RNG)
+  //
+  // If all else fails, use Math.random().  It's fast, but is of unspecified
+  // quality.
+  var rnds = new Array(16);
+
+  module.exports = function mathRNG() {
+    for (var i = 0, r; i < 16; i++) {
+      if ((i & 0x03) === 0) r = Math.random() * 0x100000000;
+      rnds[i] = r >>> ((i & 0x03) << 3) & 0xff;
+    }
+
+    return rnds;
+  };
+}
+
+},{}],26:[function(_dereq_,module,exports){
+var rng = _dereq_('./lib/rng');
+var bytesToUuid = _dereq_('./lib/bytesToUuid');
+
+// **`v1()` - Generate time-based UUID**
+//
+// Inspired by https://github.com/LiosK/UUID.js
+// and http://docs.python.org/library/uuid.html
+
+var _nodeId;
+var _clockseq;
+
+// Previous uuid creation time
+var _lastMSecs = 0;
+var _lastNSecs = 0;
+
+// See https://github.com/broofa/node-uuid for API details
+function v1(options, buf, offset) {
+  var i = buf && offset || 0;
+  var b = buf || [];
+
+  options = options || {};
+  var node = options.node || _nodeId;
+  var clockseq = options.clockseq !== undefined ? options.clockseq : _clockseq;
+
+  // node and clockseq need to be initialized to random values if they're not
+  // specified.  We do this lazily to minimize issues related to insufficient
+  // system entropy.  See #189
+  if (node == null || clockseq == null) {
+    var seedBytes = rng();
+    if (node == null) {
+      // Per 4.5, create and 48-bit node id, (47 random bits + multicast bit = 1)
+      node = _nodeId = [
+        seedBytes[0] | 0x01,
+        seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]
+      ];
+    }
+    if (clockseq == null) {
+      // Per 4.2.2, randomize (14 bit) clockseq
+      clockseq = _clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 0x3fff;
+    }
+  }
+
+  // UUID timestamps are 100 nano-second units since the Gregorian epoch,
+  // (1582-10-15 00:00).  JSNumbers aren't precise enough for this, so
+  // time is handled internally as 'msecs' (integer milliseconds) and 'nsecs'
+  // (100-nanoseconds offset from msecs) since unix epoch, 1970-01-01 00:00.
+  var msecs = options.msecs !== undefined ? options.msecs : new Date().getTime();
+
+  // Per 4.2.1.2, use count of uuid's generated during the current clock
+  // cycle to simulate higher resolution clock
+  var nsecs = options.nsecs !== undefined ? options.nsecs : _lastNSecs + 1;
+
+  // Time since last uuid creation (in msecs)
+  var dt = (msecs - _lastMSecs) + (nsecs - _lastNSecs)/10000;
+
+  // Per 4.2.1.2, Bump clockseq on clock regression
+  if (dt < 0 && options.clockseq === undefined) {
+    clockseq = clockseq + 1 & 0x3fff;
+  }
+
+  // Reset nsecs if clock regresses (new clockseq) or we've moved onto a new
+  // time interval
+  if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === undefined) {
+    nsecs = 0;
+  }
+
+  // Per 4.2.1.2 Throw error if too many uuids are requested
+  if (nsecs >= 10000) {
+    throw new Error('uuid.v1(): Can\'t create more than 10M uuids/sec');
+  }
+
+  _lastMSecs = msecs;
+  _lastNSecs = nsecs;
+  _clockseq = clockseq;
+
+  // Per 4.1.4 - Convert from unix epoch to Gregorian epoch
+  msecs += 12219292800000;
+
+  // `time_low`
+  var tl = ((msecs & 0xfffffff) * 10000 + nsecs) % 0x100000000;
+  b[i++] = tl >>> 24 & 0xff;
+  b[i++] = tl >>> 16 & 0xff;
+  b[i++] = tl >>> 8 & 0xff;
+  b[i++] = tl & 0xff;
+
+  // `time_mid`
+  var tmh = (msecs / 0x100000000 * 10000) & 0xfffffff;
+  b[i++] = tmh >>> 8 & 0xff;
+  b[i++] = tmh & 0xff;
+
+  // `time_high_and_version`
+  b[i++] = tmh >>> 24 & 0xf | 0x10; // include version
+  b[i++] = tmh >>> 16 & 0xff;
+
+  // `clock_seq_hi_and_reserved` (Per 4.2.2 - include variant)
+  b[i++] = clockseq >>> 8 | 0x80;
+
+  // `clock_seq_low`
+  b[i++] = clockseq & 0xff;
+
+  // `node`
+  for (var n = 0; n < 6; ++n) {
+    b[i + n] = node[n];
+  }
+
+  return buf ? buf : bytesToUuid(b);
+}
+
+module.exports = v1;
+
+},{"./lib/bytesToUuid":24,"./lib/rng":25}],27:[function(_dereq_,module,exports){
+var rng = _dereq_('./lib/rng');
+var bytesToUuid = _dereq_('./lib/bytesToUuid');
+
+function v4(options, buf, offset) {
+  var i = buf && offset || 0;
+
+  if (typeof(options) == 'string') {
+    buf = options === 'binary' ? new Array(16) : null;
+    options = null;
+  }
+  options = options || {};
+
+  var rnds = options.random || (options.rng || rng)();
+
+  // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+  rnds[6] = (rnds[6] & 0x0f) | 0x40;
+  rnds[8] = (rnds[8] & 0x3f) | 0x80;
+
+  // Copy bytes to buffer, if provided
+  if (buf) {
+    for (var ii = 0; ii < 16; ++ii) {
+      buf[i + ii] = rnds[ii];
+    }
+  }
+
+  return buf || bytesToUuid(rnds);
+}
+
+module.exports = v4;
+
+},{"./lib/bytesToUuid":24,"./lib/rng":25}]},{},[1])(1)
 });

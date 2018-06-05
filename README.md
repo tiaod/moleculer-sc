@@ -107,30 +107,56 @@ You can implement authorization. For this you need to do 2 things.
 
 Example authorization:
 ```javascript
-// Server code
-// This is a slightly simplified version of what it might look
-// like if you were using MySQL as a database.
-
 socket.on('login', function (credentials, respond) {
-  var passwordHash = sha256(credentials.password);
-
-  var userQuery = 'SELECT * FROM Users WHERE username = ?';
-  mySQLClient.query(userQuery, [credentials.username], function (err, rows) {
-    var userRow = rows[0];
-    var isValidLogin = userRow && userRow.password === passwordHash;
-    if (isValidLogin) {
-      respond();
-      // This will give the client a token so that they won't
-      // have to login again if they lose their connection
-      // or revisit the app at a later time.
-      socket.setAuthToken({username: credentials.username, channels: userRow.channels});
-    } else {
-      // Passing string as first argument indicates error
-      respond('Login failed');
-    }
-  })
+  broker.call('v1.account.login', data).then(res=>{
+    socket.setAuthToken(res) //success
+    callback(null,res)
+  }).catch(err=>{
+    const errObj = _.pick(err, ["name", "message", "code", "type", "data"])
+    callback(errObj)
+  }) //error
 })
 ```
+For convenience, we did this for you. You could set a handler with `login` type:
+```javascript
+broker.createService({
+  mixins: [SocketClusterService(worker)],
+  settings: {
+    routes: [
+      {
+        event: "login",
+        type:'login', //Set route type to login, when calling success, you are logged in!
+        whitelist: [
+          "login.password",
+          "login.google",
+          "login.github"
+        ]
+      }
+    ]
+  }
+});
+// Add an handler service
+broker.createService({
+  name:'login',
+  actions: {
+    password(ctx) {
+      if(ctx.params.user == 'tiaod' && ctx.params.password == 'pass'){
+        return {id: 'tiaod'}
+      }else{
+        throw new Error('UNAUTH')
+      }
+    }
+  }
+})
+```
+Then:
+```javascript
+socket.emit('login', {action:'login.password', params: {user: 'tiaod', password:'pass'}}, function(err, data){
+  console.log('call login.passoword:',data)
+  console.log(socket.authToken.id == 'tiaod') //true
+})
+```
+
 Also you could overwrite the `getMeta` method to add more addition meta info. The default `getMeta` method is:
 ```javascript
 getMeta(socket){
@@ -315,6 +341,8 @@ broker.sc = socket || exchange //pass the socket or exchange object to broker, T
 ```
 
 # Change logs
+**0.8.0** - Add `login` handler type.
+
 **0.7.0** - Add `onError` handler
 
 **0.6.1** - You can pass `socket` or `exchange` object to SCTransporter now.

@@ -33,10 +33,6 @@ class Worker extends SCWorker {
     broker.start().then(()=>{
       console.log('broker1 started!')
     })
-
-
-
-
     var environment = this.options.environment;
     var app = express();
 

@@ -26,13 +26,13 @@ module.exports = function(worker){
       this.routes = {} //handlers
       for(let item of this.settings.routes){ //attach new actions
         this.logger.info('Add handler:', item)
-        this.routes[item.event] = this.makeHandler(item.event, item.whitelist, item.callOptions)
+        this.routes[item.event] = this.makeHandler(item)
       }
       const scServer = worker.scServer
       scServer.on('connection', (socket) => {
         this.logger.info('Socket connected:', socket.id)
         for(let action in this.routes){
-          // this.logger.info('Attach event:', action)
+          debug('Attach event:', action)
           socket.on(action, this.routes[action]) //attach to socket
         }
       })
@@ -48,31 +48,57 @@ module.exports = function(worker){
   				}
   			}) != null
   		},
-      makeHandler:function(eventName, whitelist, opts){
+      async callAction(data, opts, whitelist){
+        if(!data || !_.isString(data.action)){
+          debug(`BadRequest:`,data)
+          throw new BadRequestError()
+        } // validate action
+        let {action, params} = data
+        if(whitelist && !this.checkWhitelist(action, whitelist)){//check whitelist
+          debug(`Service "${action}" not found`)
+          throw new ServiceNotFoundError(action)
+        }
+        let meta = this.getMeta(this)
+        debug('Call action:', action, params, meta)
+        return await this.broker.call(action, params, _.assign({meta},opts))
+      },
+      makeHandler:function(item){
+        let eventName = item.event
+        let type = item.type || 'call' // handler type. ['call', 'login']
+        let whitelist = item.whitelist
+        let opts = item.callOptions
         debug('MakeHandler', eventName)
         const svc = this
-        return async function(data, respond){
-          debug(`Handle ${eventName} event:`,data)
-          if(!data || !_.isString(data.action)){
-            debug(`BadRequest:`,data)
-            return svc.onError(new BadRequestError(), respond)
-          } // validate action
-          let {action, params} = data
-          if(whitelist && !svc.checkWhitelist(action, whitelist)){//check whitelist
-            debug(`Service "${action}" not found`)
-            return svc.onError(new ServiceNotFoundError(action), respond)
-          }
-          try{
-            debug('Call action:', action, params, svc.getMeta(this))
-            let ret = await svc.broker.call(action, params, _.assign({
-              meta:svc.getMeta(this)
-            },opts))
-            respond(null, ret)
-          }catch(err){
-            debug('Call action error:',err)
-            svc.onError(err, respond)
-          }
+        switch (type) {
+          case 'call': //call handler
+            return async function(data, respond){
+              debug(`Handle ${eventName} event:`,data)
+              try{
+                let res = await svc.callAction(data, opts, whitelist)
+                respond(null, res)
+              }catch(err){
+                debug('Call action error:',err)
+                svc.onError(err, respond)
+              }
+            }
+            break;
+          case 'login':
+            return async function(data, respond){
+              debug(`Handle ${eventName} event:`,data)
+              try{
+                let res = await svc.callAction(data, opts, whitelist)
+                debug('Login success', res)
+                this.setAuthToken(res) //success
+                respond(null, {ok: true})
+              }catch(err){
+                svc.onError(err, respond)
+              }
+            }
+            break;
+          default:
+            throw new Error(`Unknow handler type: ${type}`)
         }
+
       },
       getMeta(socket){
         return {
