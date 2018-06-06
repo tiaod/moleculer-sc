@@ -48,7 +48,7 @@ module.exports = function(worker){
   				}
   			}) != null
   		},
-      async callAction(data, opts, whitelist){
+      async callAction(socket, data, opts, whitelist){
         if(!data || !_.isString(data.action)){
           debug(`BadRequest:`,data)
           throw new BadRequestError()
@@ -58,7 +58,7 @@ module.exports = function(worker){
           debug(`Service "${action}" not found`)
           throw new ServiceNotFoundError(action)
         }
-        let meta = this.getMeta(this)
+        let meta = this.getMeta(socket)
         debug('Call action:', action, params, meta)
         return await this.broker.call(action, params, _.assign({meta},opts))
       },
@@ -74,7 +74,7 @@ module.exports = function(worker){
             return async function(data, respond){
               debug(`Handle ${eventName} event:`,data)
               try{
-                let res = await svc.callAction(data, opts, whitelist)
+                let res = await svc.callAction(this, data, opts, whitelist)
                 respond(null, res)
               }catch(err){
                 debug('Call action error:',err)
@@ -86,7 +86,7 @@ module.exports = function(worker){
             return async function(data, respond){
               debug(`Handle ${eventName} event:`,data)
               try{
-                let res = await svc.callAction(data, opts, whitelist)
+                let res = await svc.callAction(this, data, opts, whitelist)
                 debug('Login success', res)
                 this.setAuthToken(res) //success
                 respond(null, {ok: true})

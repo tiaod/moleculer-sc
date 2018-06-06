@@ -162,3 +162,32 @@ test('emit invaild data should return BadRequestError', async t=>{
   })
   return sleep(1000)
 })
+
+test('getMeta should pass socket as param', async t=>{
+  const socket = new EventEmitter()
+  socket.authToken = 'tiaod'
+  const {broker, worker} = t.context
+  const svc = broker.createService({
+    name:'sc-gw', // SocketCluster GateWay
+    mixins:[SocketClusterService(worker)],
+    settings:{
+      routes:[{event:'call'}]
+    }
+  })
+  t.plan(2)
+  broker.createService({
+    name: 'getMetaTest',
+    actions: {
+      get(ctx){
+        t.true(ctx.meta.user === socket.authToken)
+        return {ok: true}
+      }
+    }
+  })
+  broker.start()
+  worker.scServer.emit('connection', socket)
+  socket.emit('call', { action: 'getMetaTest.get' }, function(err, res){
+    t.true(res.ok)
+  })
+  return sleep(1000)
+})
