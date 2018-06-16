@@ -344,7 +344,9 @@ broker.call('sc-gw.publish',{
 
 # Change logs
 **0.9.0** - Add `publish` action.
+
 **0.8.1** - Fix `getMeta` error.
+
 **0.8.0** - Add `login` handler type.
 
 **0.7.0** - Add `onError` handler
