@@ -331,17 +331,20 @@ new SCTransporter({
 
 
 ## Publish to scChannel
-Just do it on SocketCluster way!
+Just do:
 ```javascript
-let broker = new ServiceBroker({
-  nodeID: "node-1",
-  logger: console,
+let data = {
+  hello: 'world'
+}
+broker.call('sc-gw.publish',{
+  topic: 'your.topic.here',
+  data: data
 })
-broker.sc = socket || exchange //pass the socket or exchange object to broker, Then you can use `ctx.broker.sc.publish(channel,data)`
 ```
 
 # Change logs
-**0.8.1** - Fix `getMeta` error
+**0.9.0** - Add `publish` action.
+**0.8.1** - Fix `getMeta` error.
 **0.8.0** - Add `login` handler type.
 
 **0.7.0** - Add `onError` handler

@@ -9,6 +9,7 @@ const debug = require('debug')('moleculer-sc')
 const nanomatch = require('nanomatch')
 const { ServiceNotFoundError } = require("moleculer").Errors;
 const { BadRequestError } = require('./errors')
+
 module.exports = function(worker){
   return {
     name:'sc-gw',
@@ -98,7 +99,6 @@ module.exports = function(worker){
           default:
             throw new Error(`Unknow handler type: ${type}`)
         }
-
       },
       getMeta(socket){
         return {
@@ -109,6 +109,19 @@ module.exports = function(worker){
         debug('onError',err)
         const errObj = _.pick(err, ["name", "message", "code", "type", "data"]);
         return respond(errObj)
+      }
+    },
+    actions: {
+      publish(ctx){
+        return new Promise(function(resolve, reject) {
+          worker.exchange.publish(ctx.params.topic, ctx.params.data, function(err,ackData){
+            if(err){
+              debug(err)
+              return reject(err)
+            }
+            return resolve(ackData)
+          })
+        })
       }
     }
   }
