@@ -75,7 +75,7 @@ broker.createService({
 ```
 
 ## Multiple routes
-You can create multiple routes with different prefix, whitelist, alias, calling options & authorization.
+You can create multiple routes with different whitelist, calling options & authorization.
 ```javascript
 broker.createService({
   mixins: [SocketClusterService(worker)],
